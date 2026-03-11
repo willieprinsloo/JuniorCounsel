@@ -144,13 +144,13 @@ class Document(Base):
     mime_type: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     pages: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
-    document_type: Mapped[DocumentTypeEnum] = mapped_column(default=DocumentTypeEnum.OTHER)
+    document_type: Mapped[DocumentTypeEnum] = mapped_column(default=DocumentTypeEnum.OTHER, index=True)
     document_subtype: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     tags: Mapped[Optional[list[str]]] = mapped_column(JSONB, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Processing state
-    overall_status: Mapped[DocumentStatusEnum] = mapped_column(default=DocumentStatusEnum.QUEUED)
+    overall_status: Mapped[DocumentStatusEnum] = mapped_column(default=DocumentStatusEnum.QUEUED, index=True)
     stage: Mapped[Optional[DocumentStageEnum]] = mapped_column(nullable=True)
     stage_progress: Mapped[int] = mapped_column(Integer, default=0)  # 0-100
 
