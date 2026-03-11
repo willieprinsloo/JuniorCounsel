@@ -3,13 +3,18 @@ FastAPI application entry point for Junior Counsel.
 
 This module creates the FastAPI application instance and configures:
 - CORS middleware for frontend access
+- Request logging middleware
+- Error handling middleware
 - API routers for all endpoints
 - Application-level settings
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
+from app.middleware.logging import RequestLoggingMiddleware
+from app.middleware.error_handler import database_error_handler, generic_error_handler
 
 # Create FastAPI app
 app = FastAPI(
@@ -28,6 +33,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Request logging middleware
+app.add_middleware(RequestLoggingMiddleware)
+
+# Exception handlers
+app.add_exception_handler(SQLAlchemyError, database_error_handler)
+app.add_exception_handler(Exception, generic_error_handler)
 
 
 @app.get("/health")
