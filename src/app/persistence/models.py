@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import enum
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Enum,
+    Enum as SQLEnum,
     ForeignKey,
     Integer,
     String,
@@ -28,7 +30,7 @@ class Organisation(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contact_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -42,7 +44,7 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -50,7 +52,7 @@ class User(Base):
     cases: Mapped[list["Case"]] = relationship(back_populates="owner")
 
 
-class OrganisationRoleEnum(str, Enum):
+class OrganisationRoleEnum(str, enum.Enum):
     ADMIN = "admin"
     PRACTITIONER = "practitioner"
     STAFF = "staff"
@@ -65,13 +67,13 @@ class OrganisationUser(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     organisation_id: Mapped[int] = mapped_column(ForeignKey("organisations.id", ondelete="CASCADE"))
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    role: Mapped[OrganisationRoleEnum] = mapped_column(Enum(OrganisationRoleEnum, name="organisation_role_enum"))
+    role: Mapped[OrganisationRoleEnum] = mapped_column()
 
     organisation: Mapped[Organisation] = relationship(back_populates="users")
     user: Mapped[User] = relationship(back_populates="organisations")
 
 
-class CaseStatusEnum(str, Enum):
+class CaseStatusEnum(str, enum.Enum):
     ACTIVE = "active"
     CLOSED = "closed"
     ARCHIVED = "archived"
@@ -82,23 +84,23 @@ class Case(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid4)
     organisation_id: Mapped[int] = mapped_column(ForeignKey("organisations.id", ondelete="RESTRICT"), index=True)
-    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    owner_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     title: Mapped[str] = mapped_column(String(255))
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    case_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    status: Mapped[CaseStatusEnum] = mapped_column(Enum(CaseStatusEnum, name="case_status_enum"), default=CaseStatusEnum.ACTIVE)
-    jurisdiction: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    case_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    status: Mapped[CaseStatusEnum] = mapped_column(default=CaseStatusEnum.ACTIVE)
+    jurisdiction: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    case_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     organisation: Mapped[Organisation] = relationship(back_populates="cases")
-    owner: Mapped[User | None] = relationship(back_populates="cases")
+    owner: Mapped[Optional[User]] = relationship(back_populates="cases")
     documents: Mapped[list["Document"]] = relationship(back_populates="case")
 
 
-class DocumentTypeEnum(str, Enum):
+class DocumentTypeEnum(str, enum.Enum):
     PLEADING = "pleading"
     EVIDENCE = "evidence"
     CORRESPONDENCE = "correspondence"
@@ -107,14 +109,14 @@ class DocumentTypeEnum(str, Enum):
     OTHER = "other"
 
 
-class DocumentStatusEnum(str, Enum):
+class DocumentStatusEnum(str, enum.Enum):
     QUEUED = "queued"
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
 
 
-class DocumentStageEnum(str, Enum):
+class DocumentStageEnum(str, enum.Enum):
     UPLOADING = "uploading"
     OCR = "ocr"
     TEXT_EXTRACTION = "text_extraction"
@@ -131,46 +133,40 @@ class Document(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid4)
     case_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cases.id", ondelete="CASCADE"), index=True)
-    upload_session_id: Mapped[uuid.UUID | None] = mapped_column(
+    upload_session_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("upload_sessions.id", ondelete="SET NULL"), nullable=True, index=True
     )
     uploaded_by_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
 
     filename: Mapped[str] = mapped_column(String(255))
-    file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)  # bytes
-    mime_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    pages: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    file_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # bytes
+    mime_type: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    pages: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
-    document_type: Mapped[DocumentTypeEnum] = mapped_column(
-        Enum(DocumentTypeEnum, name="document_type_enum"), default=DocumentTypeEnum.OTHER
-    )
-    document_subtype: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    tags: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
-    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    document_type: Mapped[DocumentTypeEnum] = mapped_column(default=DocumentTypeEnum.OTHER)
+    document_subtype: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    tags: Mapped[Optional[list[str]]] = mapped_column(JSONB, nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Processing state
-    overall_status: Mapped[DocumentStatusEnum] = mapped_column(
-        Enum(DocumentStatusEnum, name="document_status_enum"), default=DocumentStatusEnum.QUEUED
-    )
-    stage: Mapped[DocumentStageEnum | None] = mapped_column(
-        Enum(DocumentStageEnum, name="document_stage_enum"), nullable=True
-    )
+    overall_status: Mapped[DocumentStatusEnum] = mapped_column(default=DocumentStatusEnum.QUEUED)
+    stage: Mapped[Optional[DocumentStageEnum]] = mapped_column(nullable=True)
     stage_progress: Mapped[int] = mapped_column(Integer, default=0)  # 0-100
 
     # OCR metadata
     needs_ocr: Mapped[bool] = mapped_column(Boolean, default=False)
-    ocr_confidence: Mapped[float | None] = mapped_column(nullable=True)
-    text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ocr_confidence: Mapped[Optional[float]] = mapped_column(nullable=True)
+    text_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     case: Mapped[Case] = relationship(back_populates="documents")
     uploaded_by: Mapped[User] = relationship()
-    upload_session: Mapped["UploadSession | None"] = relationship(back_populates="documents")
+    upload_session: Mapped[Optional["UploadSession"]] = relationship(back_populates="documents")
     chunks: Mapped[list["DocumentChunk"]] = relationship(back_populates="document")
 
 
@@ -199,24 +195,24 @@ class DocumentChunk(Base):
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
 
     text_content: Mapped[str] = mapped_column(Text)
-    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    paragraph_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    paragraph_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    paragraph_start: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    paragraph_end: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     # pgvector embedding (will need pgvector extension enabled)
-    # embedding: Mapped[list[float]] = mapped_column(Vector(1536), nullable=True)  # OpenAI ada-002 dimension
+    # embedding: Mapped[Optional[list[float]]] = mapped_column(Vector(1536), nullable=True)  # OpenAI ada-002 dimension
 
     # Metadata for search filtering
-    chunk_type: Mapped[str | None] = mapped_column(String(64), nullable=True)  # heading, body, table, footnote
-    semantic_role: Mapped[str | None] = mapped_column(String(64), nullable=True)  # facts, orders_sought, argument, etc.
-    metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    chunk_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # heading, body, table, footnote
+    semantic_role: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # facts, orders_sought, argument, etc.
+    chunk_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     document: Mapped[Document] = relationship(back_populates="chunks")
 
 
-class DraftSessionStatusEnum(str, Enum):
+class DraftSessionStatusEnum(str, enum.Enum):
     INITIALIZING = "initializing"
     AWAITING_INTAKE = "awaiting_intake"
     GENERATING = "generating"
@@ -235,22 +231,20 @@ class DraftSession(Base):
     title: Mapped[str] = mapped_column(String(255))
     document_type: Mapped[str] = mapped_column(String(128))
 
-    status: Mapped[DraftSessionStatusEnum] = mapped_column(
-        Enum(DraftSessionStatusEnum, name="draft_session_status_enum"), default=DraftSessionStatusEnum.INITIALIZING
-    )
+    status: Mapped[DraftSessionStatusEnum] = mapped_column(default=DraftSessionStatusEnum.INITIALIZING)
 
     # Research phase outputs
-    case_profile: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    research_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    outline: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    case_profile: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    research_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    outline: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Intake answers
-    intake_answers: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    intake_answers: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Generated DraftDoc
-    draft_doc: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    draft_doc: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -259,7 +253,7 @@ class DraftSession(Base):
     rulebook: Mapped["Rulebook"] = relationship()
 
 
-class RulebookStatusEnum(str, Enum):
+class RulebookStatusEnum(str, enum.Enum):
     DRAFT = "draft"
     PUBLISHED = "published"
     DEPRECATED = "deprecated"
@@ -275,15 +269,13 @@ class Rulebook(Base):
     document_type: Mapped[str] = mapped_column(String(128), index=True)
     jurisdiction: Mapped[str] = mapped_column(String(128), index=True)
     version: Mapped[str] = mapped_column(String(32))
-    label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    label: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
-    status: Mapped[RulebookStatusEnum] = mapped_column(
-        Enum(RulebookStatusEnum, name="rulebook_status_enum"), default=RulebookStatusEnum.DRAFT
-    )
+    status: Mapped[RulebookStatusEnum] = mapped_column(default=RulebookStatusEnum.DRAFT)
 
     source_yaml: Mapped[str] = mapped_column(Text)
-    rules_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rules_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    content_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
