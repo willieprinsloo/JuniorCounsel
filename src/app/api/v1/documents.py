@@ -3,13 +3,16 @@ Document endpoints for CRUD operations with pagination.
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.core.queue import enqueue_document_processing
+from app.core.storage import storage, detect_needs_ocr
 from app.dependencies import get_current_user
 from app.middleware.database import get_db
 from app.persistence.models import User, DocumentStatusEnum
-from app.persistence.repositories import DocumentRepository
+from app.persistence.repositories import DocumentRepository, UploadSessionRepository
 from app.schemas.document import (
     DocumentCreate,
     DocumentUpdate,
@@ -19,6 +22,122 @@ from app.schemas.document import (
 )
 
 router = APIRouter()
+
+
+@router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
+async def upload_document_file(
+    file: UploadFile = File(..., description="Document file to upload (PDF, DOCX, images)"),
+    case_id: str = Form(..., description="Case ID this document belongs to"),
+    upload_session_id: Optional[str] = Form(None, description="Optional upload session for batch tracking"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Upload a document file and enqueue for processing.
+
+    This endpoint handles multipart/form-data file uploads, saves the file to storage,
+    creates a Document record, and enqueues a background processing job.
+
+    Processing stages (handled by worker):
+    1. OCR (if needed)
+    2. Text extraction
+    3. Chunking
+    4. Embedding generation
+    5. Vector indexing
+    6. Classification
+
+    Args:
+        file: Uploaded file
+        case_id: Case ID (UUID)
+        upload_session_id: Optional UploadSession ID for batch tracking
+        db: Database session
+        current_user: Current authenticated user
+
+    Returns:
+        Created document with status="queued"
+
+    Example:
+        ```bash
+        curl -X POST http://localhost:8000/api/v1/documents/upload \
+          -H "Authorization: Bearer {token}" \
+          -F "file=@contract.pdf" \
+          -F "case_id=550e8400-e29b-41d4-a716-446655440000"
+        ```
+    """
+    # Validate file size
+    max_size_bytes = (settings.MAX_UPLOAD_SIZE_MB or 50) * 1024 * 1024
+    file.file.seek(0, 2)  # Seek to end
+    file_size = file.file.tell()
+    file.file.seek(0)  # Reset to beginning
+
+    if file_size > max_size_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large. Maximum size: {settings.MAX_UPLOAD_SIZE_MB}MB"
+        )
+
+    # Validate file extension
+    allowed_extensions = (settings.ALLOWED_EXTENSIONS or "pdf,docx,doc,jpg,png").split(",")
+    file_extension = file.filename.split(".")[-1].lower()
+    if file_extension not in allowed_extensions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File type not allowed. Allowed: {', '.join(allowed_extensions)}"
+        )
+
+    # Detect if OCR is needed
+    needs_ocr = detect_needs_ocr(file)
+
+    # Save file to storage
+    try:
+        file_path, storage_url = storage.save_file(file, case_id)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save file: {str(e)}"
+        )
+
+    # Create Document record
+    doc_repo = DocumentRepository(db)
+    document = doc_repo.create(
+        case_id=case_id,
+        uploaded_by_id=current_user.id,
+        filename=file.filename,
+        upload_session_id=upload_session_id,
+        needs_ocr=needs_ocr
+    )
+
+    # Store file path in metadata
+    document.metadata = {
+        "file_path": file_path,
+        "storage_url": storage_url,
+        "file_size_bytes": file_size,
+        "original_filename": file.filename
+    }
+    db.flush()
+    db.commit()
+
+    # Enqueue processing job (non-blocking)
+    try:
+        job_id = enqueue_document_processing(document.id)
+        # Store job ID in metadata for tracking
+        document.metadata["job_id"] = job_id
+        db.flush()
+        db.commit()
+    except Exception as e:
+        # Log error but don't fail the upload
+        # User can manually retry processing later
+        document.error_message = f"Failed to enqueue job: {str(e)}"
+        db.flush()
+        db.commit()
+
+    # Update upload session counters if provided
+    if upload_session_id:
+        session_repo = UploadSessionRepository(db)
+        session_repo.update_counts(upload_session_id, completed_increment=0, failed_increment=0)
+        # Note: counts updated by worker on completion/failure
+
+    return document
 
 
 @router.post("/", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)

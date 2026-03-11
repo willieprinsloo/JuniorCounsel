@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.rulebook_validator import RulebookValidator, RulebookValidationError
 from app.dependencies import get_current_user
 from app.middleware.database import get_db
 from app.persistence.models import User, RulebookStatusEnum
@@ -221,6 +222,52 @@ def update_rulebook(
 
     db.flush()
     return rulebook
+
+
+@router.post("/validate")
+def validate_rulebook_yaml(
+    yaml_content: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Validate rulebook YAML without saving.
+
+    Useful for admins to check YAML before creating/updating a rulebook.
+
+    Args:
+        yaml_content: YAML string to validate
+        db: Database session
+        current_user: Current authenticated user
+
+    Returns:
+        Validation result with errors and parsed JSON
+
+    Example:
+        ```json
+        {
+          "valid": true,
+          "errors": [],
+          "warnings": ["intake_questions[0] missing optional 'help_text'"],
+          "parsed_json": {...}
+        }
+        ```
+    """
+    try:
+        parsed = RulebookValidator.validate(yaml_content)
+        return {
+            "valid": True,
+            "errors": [],
+            "warnings": [],
+            "parsed_json": parsed
+        }
+    except RulebookValidationError as e:
+        return {
+            "valid": False,
+            "errors": [str(e)],
+            "warnings": [],
+            "parsed_json": None
+        }
 
 
 @router.delete("/{rulebook_id}", status_code=status.HTTP_204_NO_CONTENT)
