@@ -10,13 +10,17 @@ Handles the complete document processing pipeline:
 6. Document classification
 """
 import logging
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal
-from app.persistence.models import DocumentStatusEnum
+from app.core.ai_providers import get_embedding_provider, get_llm_provider
+from app.persistence.models import DocumentStatusEnum, DocumentChunk
 from app.persistence.repositories import DocumentRepository
+from app.workers.ocr import perform_ocr
+from app.workers.text_extraction import extract_text
+from app.workers.chunking import chunk_text, extract_page_number
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +50,12 @@ def process_document_job(document_id: str):
 
         logger.info(f"Starting processing for document {document_id}: {document.filename}")
 
+        # Get file path from metadata
+        if not document.metadata or 'storage_url' not in document.metadata:
+            raise ValueError(f"Document {document_id} has no file path in metadata")
+
+        file_path = document.metadata['storage_url']
+
         # Update status to processing
         doc_repo.update_status(
             document_id=document_id,
@@ -55,112 +65,151 @@ def process_document_job(document_id: str):
         )
         db.commit()
 
-        # Stage 1: OCR (if needed)
-        if document.needs_ocr:
-            logger.info(f"[{document_id}] Stage 1: OCR")
-            doc_repo.update_status(
-                document_id=document_id,
-                overall_status=DocumentStatusEnum.PROCESSING,
-                stage="ocr",
-                stage_progress=10
-            )
-            db.commit()
-
-            # TODO: Implement OCR with pytesseract
-            # text = perform_ocr(document.file_path)
-            # document.metadata['ocr_confidence'] = confidence_score
-
-            doc_repo.update_status(
-                document_id=document_id,
-                overall_status=DocumentStatusEnum.PROCESSING,
-                stage="ocr",
-                stage_progress=30
-            )
-            db.commit()
-
-        # Stage 2: Text Extraction
-        logger.info(f"[{document_id}] Stage 2: Text extraction")
+        # Stage 1: Text Extraction (with OCR if needed)
+        logger.info(f"[{document_id}] Stage 1: Text extraction (OCR={document.needs_ocr})")
         doc_repo.update_status(
             document_id=document_id,
             overall_status=DocumentStatusEnum.PROCESSING,
-            stage="text_extraction",
-            stage_progress=35
+            stage="text_extraction" if not document.needs_ocr else "ocr",
+            stage_progress=10
         )
         db.commit()
 
-        # TODO: Implement text extraction with pypdf/pdfplumber
-        # text = extract_text_from_pdf(document.file_path)
-        # if not text:
-        #     raise ValueError("No text extracted from document")
+        try:
+            # extract_text handles both OCR and regular extraction
+            extracted_text = extract_text(file_path, needs_ocr=document.needs_ocr)
+
+            if not extracted_text or len(extracted_text.strip()) < 50:
+                raise ValueError("Insufficient text extracted from document")
+
+            logger.info(f"[{document_id}] Extracted {len(extracted_text)} characters")
+
+            # Store OCR confidence if available
+            if document.needs_ocr and document.metadata:
+                # OCR returns {"text": ..., "confidence": ..., "page_count": ...}
+                # But extract_text only returns text, so we'd need to call perform_ocr separately
+                # For now, just note that OCR was used
+                document.metadata['extraction_method'] = 'ocr'
+            else:
+                document.metadata['extraction_method'] = 'text'
+
+            db.flush()
+
+        except Exception as e:
+            logger.error(f"[{document_id}] Text extraction failed: {e}")
+            raise RuntimeError(f"Text extraction failed: {str(e)}")
 
         doc_repo.update_status(
             document_id=document_id,
             overall_status=DocumentStatusEnum.PROCESSING,
             stage="text_extraction",
+            stage_progress=30
+        )
+        db.commit()
+
+        # Stage 2: Chunking
+        logger.info(f"[{document_id}] Stage 2: Chunking")
+        doc_repo.update_status(
+            document_id=document_id,
+            overall_status=DocumentStatusEnum.PROCESSING,
+            stage="chunking",
+            stage_progress=40
+        )
+        db.commit()
+
+        try:
+            # Chunk text into semantic segments
+            chunks = chunk_text(
+                text=extracted_text,
+                chunk_size=512,  # ~512 tokens per chunk
+                chunk_overlap=50,  # 50 tokens overlap for context
+                min_chunk_size=100  # Skip very small chunks
+            )
+
+            if not chunks:
+                raise ValueError("No chunks created from text")
+
+            logger.info(f"[{document_id}] Created {len(chunks)} chunks")
+
+        except Exception as e:
+            logger.error(f"[{document_id}] Chunking failed: {e}")
+            raise RuntimeError(f"Chunking failed: {str(e)}")
+
+        doc_repo.update_status(
+            document_id=document_id,
+            overall_status=DocumentStatusEnum.PROCESSING,
+            stage="chunking",
             stage_progress=50
         )
         db.commit()
 
-        # Stage 3: Chunking
-        logger.info(f"[{document_id}] Stage 3: Chunking")
-        doc_repo.update_status(
-            document_id=document_id,
-            overall_status=DocumentStatusEnum.PROCESSING,
-            stage="chunking",
-            stage_progress=55
-        )
-        db.commit()
-
-        # TODO: Implement text chunking
-        # chunks = chunk_text(text, max_tokens=512)
-
-        doc_repo.update_status(
-            document_id=document_id,
-            overall_status=DocumentStatusEnum.PROCESSING,
-            stage="chunking",
-            stage_progress=70
-        )
-        db.commit()
-
-        # Stage 4: Embedding
-        logger.info(f"[{document_id}] Stage 4: Embedding generation")
+        # Stage 3: Embedding generation
+        logger.info(f"[{document_id}] Stage 3: Embedding generation")
         doc_repo.update_status(
             document_id=document_id,
             overall_status=DocumentStatusEnum.PROCESSING,
             stage="embedding",
-            stage_progress=75
+            stage_progress=60
         )
         db.commit()
 
-        # TODO: Implement embedding with OpenAI/local model
-        # embeddings = generate_embeddings(chunks)
+        try:
+            # Get embedding provider
+            embedding_provider = get_embedding_provider()
+
+            # Extract text content from chunks
+            chunk_texts = [chunk["content"] for chunk in chunks]
+
+            # Generate embeddings in batches
+            embeddings = embedding_provider.embed_batch(chunk_texts, batch_size=100)
+
+            if len(embeddings) != len(chunks):
+                raise ValueError(f"Embedding count mismatch: {len(embeddings)} != {len(chunks)}")
+
+            logger.info(f"[{document_id}] Generated {len(embeddings)} embeddings")
+
+        except Exception as e:
+            logger.error(f"[{document_id}] Embedding generation failed: {e}")
+            raise RuntimeError(f"Embedding generation failed: {str(e)}")
 
         doc_repo.update_status(
             document_id=document_id,
             overall_status=DocumentStatusEnum.PROCESSING,
             stage="embedding",
-            stage_progress=85
+            stage_progress=80
         )
         db.commit()
 
-        # Stage 5: Indexing (save to DocumentChunk with pgvector)
-        logger.info(f"[{document_id}] Stage 5: Vector indexing")
+        # Stage 4: Vector indexing (save to database)
+        logger.info(f"[{document_id}] Stage 4: Vector indexing")
         doc_repo.update_status(
             document_id=document_id,
             overall_status=DocumentStatusEnum.PROCESSING,
             stage="indexing",
-            stage_progress=90
+            stage_progress=85
         )
         db.commit()
 
-        # TODO: Save DocumentChunk records with embeddings
-        # for chunk, embedding in zip(chunks, embeddings):
-        #     DocumentChunk.create(
-        #         document_id=document_id,
-        #         content=chunk,
-        #         embedding=embedding,
-        #         chunk_index=i
-        #     )
+        try:
+            # Save DocumentChunk records with embeddings
+            for chunk, embedding in zip(chunks, embeddings):
+                doc_chunk = DocumentChunk(
+                    document_id=document_id,
+                    chunk_index=chunk["chunk_index"],
+                    content=chunk["content"],
+                    embedding=embedding,  # pgvector handles the conversion
+                    page_number=chunk.get("page_number", 1),
+                    char_start=chunk.get("char_start"),
+                    char_end=chunk.get("char_end")
+                )
+                db.add(doc_chunk)
+
+            db.flush()
+            logger.info(f"[{document_id}] Saved {len(chunks)} chunks to database")
+
+        except Exception as e:
+            logger.error(f"[{document_id}] Vector indexing failed: {e}")
+            raise RuntimeError(f"Vector indexing failed: {str(e)}")
 
         doc_repo.update_status(
             document_id=document_id,
@@ -170,11 +219,22 @@ def process_document_job(document_id: str):
         )
         db.commit()
 
-        # Stage 6: Classification (optional AI-suggested type)
-        logger.info(f"[{document_id}] Stage 6: Classification")
-        # TODO: Implement LLM-based classification
-        # suggested_type = classify_document(text[:1000])
-        # document.document_type = suggested_type
+        # Stage 5: Classification (optional - use first chunk for classification)
+        logger.info(f"[{document_id}] Stage 5: Classification")
+        try:
+            # Use LLM to suggest document type based on content
+            if chunks and len(chunks[0]["content"]) > 100:
+                suggested_type = classify_document_content(chunks[0]["content"][:2000])
+                if suggested_type:
+                    # Store as metadata (don't overwrite user's classification)
+                    if not document.metadata:
+                        document.metadata = {}
+                    document.metadata['suggested_type'] = suggested_type
+                    db.flush()
+                    logger.info(f"[{document_id}] Suggested type: {suggested_type}")
+        except Exception as e:
+            # Classification is optional, don't fail the job
+            logger.warning(f"[{document_id}] Classification failed (non-critical): {e}")
 
         # Mark as completed
         doc_repo.update_status(
@@ -185,7 +245,7 @@ def process_document_job(document_id: str):
         )
         db.commit()
 
-        logger.info(f"[{document_id}] Processing completed successfully")
+        logger.info(f"[{document_id}] Processing completed successfully: {len(chunks)} chunks indexed")
 
         # TODO: Emit event for notifications
         # emit_event('document.completed', document_id=document_id)
@@ -214,27 +274,51 @@ def process_document_job(document_id: str):
             db.close()
 
 
-# TODO: Implement actual processing functions in Phase 3
-def perform_ocr(file_path: str) -> str:
-    """Perform OCR on document (Phase 3 - pytesseract)."""
-    raise NotImplementedError("OCR not yet implemented")
+def classify_document_content(text_sample: str) -> Optional[str]:
+    """
+    Classify document type using LLM.
 
+    Args:
+        text_sample: First ~2000 chars of document
 
-def extract_text_from_pdf(file_path: str) -> str:
-    """Extract text from PDF (Phase 3 - pypdf/pdfplumber)."""
-    raise NotImplementedError("Text extraction not yet implemented")
+    Returns:
+        Suggested document type or None if classification fails
+    """
+    try:
+        llm_provider = get_llm_provider()
 
+        prompt = f"""Analyze this legal document excerpt and classify its type.
 
-def chunk_text(text: str, max_tokens: int = 512) -> list[str]:
-    """Chunk text into segments (Phase 3)."""
-    raise NotImplementedError("Chunking not yet implemented")
+Document excerpt:
+{text_sample}
 
+Classify as one of:
+- pleading (court filing, claim, plea, replication)
+- affidavit (sworn statement, deponent)
+- correspondence (letter, email)
+- contract (agreement, terms)
+- evidence (exhibit, record)
+- court_order (judgment, ruling, order)
+- other
 
-def generate_embeddings(chunks: list[str]) -> list[list[float]]:
-    """Generate embeddings for chunks (Phase 3 - OpenAI/local)."""
-    raise NotImplementedError("Embedding generation not yet implemented")
+Respond with just the category name, nothing else."""
 
+        response = llm_provider.generate(
+            prompt=prompt,
+            system_message="You are a legal document classification assistant. Respond with only the category name.",
+            temperature=0.3,  # Low temperature for consistent classification
+            max_tokens=50
+        )
 
-def classify_document(text_sample: str) -> str:
-    """Classify document type using LLM (Phase 3)."""
-    raise NotImplementedError("Classification not yet implemented")
+        # Extract category from response
+        category = response.strip().lower()
+        valid_categories = ["pleading", "affidavit", "correspondence", "contract", "evidence", "court_order", "other"]
+
+        if category in valid_categories:
+            return category
+
+        return None
+
+    except Exception as e:
+        logger.warning(f"Document classification failed: {e}")
+        return None
