@@ -81,6 +81,8 @@ from app.api.v1 import (
     upload_sessions,
     draft_sessions,
     rulebooks,
+    search,
+    qa,
 )
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
@@ -90,3 +92,5 @@ app.include_router(documents.router, prefix="/api/v1/documents", tags=["document
 app.include_router(upload_sessions.router, prefix="/api/v1/upload-sessions", tags=["upload-sessions"])
 app.include_router(draft_sessions.router, prefix="/api/v1/draft-sessions", tags=["draft-sessions"])
 app.include_router(rulebooks.router, prefix="/api/v1/rulebooks", tags=["rulebooks"])
+app.include_router(search.router, prefix="/api/v1/search", tags=["search"])
+app.include_router(qa.router, prefix="/api/v1/qa", tags=["qa"])
