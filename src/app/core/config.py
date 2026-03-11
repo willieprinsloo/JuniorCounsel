@@ -36,9 +36,17 @@ class Settings(BaseSettings):
     RESEND_API_KEY: Optional[str] = None
     EMAIL_FROM_ADDRESS: Optional[str] = None
 
-    # AI Providers
+    # AI Providers (Phase 3)
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
+
+    # Embedding Configuration (Phase 3)
+    EMBEDDING_PROVIDER: str = "openai"  # openai, local
+    EMBEDDING_MODEL: str = "text-embedding-3-small"  # or text-embedding-3-large
+
+    # LLM Configuration (Phase 3)
+    LLM_PROVIDER: str = "openai"  # openai, anthropic
+    LLM_MODEL: str = "gpt-4-turbo"  # or gpt-4, claude-3-opus-20240229
 
     # File Storage
     UPLOAD_FOLDER: Optional[str] = None
