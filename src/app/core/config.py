@@ -21,10 +21,10 @@ class Settings(BaseSettings):
     # Redis/Queue
     REDIS_URL: Optional[AnyUrl] = None
 
-    # Authentication
-    SECRET_KEY: Optional[str] = None
-    JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRATION_HOURS: int = 24
+    # Authentication (Phase 2 - FastAPI)
+    SECRET_KEY: str  # Required for JWT signing
+    ALGORITHM: str = "HS256"  # JWT algorithm
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # Token expiration in minutes
 
     # Email (Resend)
     RESEND_API_KEY: Optional[str] = None
@@ -43,8 +43,22 @@ class Settings(BaseSettings):
     APP_NAME: str = "Junior Counsel"
     APP_URL: str = "http://localhost:8000"
 
+    # CORS (Phase 2 - FastAPI)
+    CORS_ORIGINS: list[str] = ["http://localhost:3000"]  # Frontend URLs
+
+    # Uvicorn (Development)
+    RELOAD: bool = True  # Auto-reload on code changes
+
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
+
+        @staticmethod
+        def parse_env_var(field_name: str, raw_val: str):
+            """Parse environment variables, especially lists."""
+            if field_name == "CORS_ORIGINS":
+                return [origin.strip() for origin in raw_val.split(",")]
+            return raw_val
 
 
 @lru_cache(maxsize=1)
