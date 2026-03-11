@@ -72,9 +72,13 @@ async def root():
     }
 
 
-# TODO: Include API routers when created
-# from app.api.v1 import auth, organisations, cases, documents
-# app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+# Include API routers
+from app.api.v1 import auth
+
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+
+# TODO: Include remaining routers when created
+# from app.api.v1 import organisations, cases, documents
 # app.include_router(organisations.router, prefix="/api/v1/organisations", tags=["organisations"])
 # app.include_router(cases.router, prefix="/api/v1/cases", tags=["cases"])
 # app.include_router(documents.router, prefix="/api/v1/documents", tags=["documents"])

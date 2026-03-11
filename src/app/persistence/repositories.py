@@ -86,6 +86,43 @@ class OrganisationRepository:
         return False
 
 
+class UserRepository:
+    """Repository for User entities."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def create(
+        self,
+        email: str,
+        password_hash: str,
+        full_name: Optional[str] = None,
+    ) -> User:
+        """Create a new user."""
+        user = User(
+            email=email,
+            password_hash=password_hash,
+            full_name=full_name,
+        )
+        self.session.add(user)
+        self.session.flush()
+        return user
+
+    def get_by_id(self, user_id: int) -> Optional[User]:
+        """Get user by ID."""
+        return self.session.get(User, user_id)
+
+    def get_by_email(self, email: str) -> Optional[User]:
+        """Get user by email address."""
+        stmt = select(User).where(User.email == email)
+        return self.session.execute(stmt).scalar_one_or_none()
+
+    def list_all(self) -> list[User]:
+        """List all users."""
+        stmt = select(User).order_by(User.email)
+        return list(self.session.execute(stmt).scalars().all())
+
+
 class CaseRepository:
     """Repository for Case entities with pagination."""
 
