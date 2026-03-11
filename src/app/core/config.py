@@ -3,12 +3,18 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import AnyUrl
-from pydantic_settings import BaseSettings
+from pydantic import AnyUrl, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
 
     # Environment
     ENV: str = "development"
@@ -44,21 +50,18 @@ class Settings(BaseSettings):
     APP_URL: str = "http://localhost:8000"
 
     # CORS (Phase 2 - FastAPI)
-    CORS_ORIGINS: list[str] = ["http://localhost:3000"]  # Frontend URLs
+    CORS_ORIGINS: str = "http://localhost:3000"  # Comma-separated frontend URLs
 
     # Uvicorn (Development)
     RELOAD: bool = True  # Auto-reload on code changes
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-
-        @staticmethod
-        def parse_env_var(field_name: str, raw_val: str):
-            """Parse environment variables, especially lists."""
-            if field_name == "CORS_ORIGINS":
-                return [origin.strip() for origin in raw_val.split(",")]
-            return raw_val
+    @field_validator("CORS_ORIGINS", mode="after")
+    @classmethod
+    def parse_cors_origins(cls, v):
+        """Parse comma-separated CORS origins from environment variable."""
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",")]
+        return v
 
 
 @lru_cache(maxsize=1)
