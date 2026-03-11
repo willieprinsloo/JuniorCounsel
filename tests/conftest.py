@@ -104,8 +104,13 @@ def organisation_factory(db_session):
 def user_factory(db_session):
     """Factory for creating test users."""
     from app.persistence.models import User
+    import uuid
 
-    def _create_user(email="user@example.com", full_name="Test User"):
+    def _create_user(email=None, full_name="Test User"):
+        # Generate unique email if not provided
+        if email is None:
+            email = f"user-{uuid.uuid4().hex[:8]}@example.com"
+
         user = User(
             email=email,
             full_name=full_name

@@ -187,9 +187,11 @@ class CaseRepository:
 
     def update_status(self, case_id: str, status: CaseStatusEnum) -> Optional[Case]:
         """Update case status."""
+        from datetime import datetime
         case = self.get_by_id(case_id)
         if case:
             case.status = status
+            case.updated_at = datetime.utcnow()
             self.session.flush()
         return case
 

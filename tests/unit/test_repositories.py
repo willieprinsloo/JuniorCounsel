@@ -17,10 +17,8 @@ class TestCaseRepository:
     @pytest.fixture
     def case_repository(self, db_session):
         """Provide a CaseRepository instance."""
-        # TODO: Uncomment when CaseRepository is implemented
-        # from app.persistence.repositories import CaseRepository
-        # return CaseRepository(db_session)
-        pytest.skip("CaseRepository not yet implemented")
+        from app.persistence.repositories import CaseRepository
+        return CaseRepository(db_session)
 
     def test_create_case(self, case_repository, organisation_factory, user_factory):
         """Test creating a new case via repository."""
@@ -68,9 +66,10 @@ class TestCaseRepository:
         case_factory(title="Case 2", organisation=org1)
         case_factory(title="Case 3", organisation=org2)
 
-        org1_cases = case_repository.list_by_organisation(org1.id)
+        org1_cases, total = case_repository.list(organisation_id=org1.id)
 
         assert len(org1_cases) == 2
+        assert total == 2
         assert all(c.organisation_id == org1.id for c in org1_cases)
 
     def test_list_with_pagination(self, case_repository, case_factory, organisation_factory):
@@ -143,11 +142,12 @@ class TestCaseRepository:
         from app.persistence.models import CaseStatusEnum
 
         case = case_factory(status=CaseStatusEnum.ACTIVE)
+        original_updated_at = case.updated_at
 
         updated_case = case_repository.update_status(case.id, CaseStatusEnum.CLOSED)
 
         assert updated_case.status == CaseStatusEnum.CLOSED
-        assert updated_case.updated_at > case.updated_at
+        assert updated_case.updated_at > original_updated_at
 
     def test_delete_case(self, case_repository, case_factory):
         """Test soft or hard delete of a case."""
@@ -166,10 +166,8 @@ class TestOrganisationRepository:
     @pytest.fixture
     def org_repository(self, db_session):
         """Provide an OrganisationRepository instance."""
-        # TODO: Uncomment when OrganisationRepository is implemented
-        # from app.persistence.repositories import OrganisationRepository
-        # return OrganisationRepository(db_session)
-        pytest.skip("OrganisationRepository not yet implemented")
+        from app.persistence.repositories import OrganisationRepository
+        return OrganisationRepository(db_session)
 
     def test_create_organisation(self, org_repository):
         """Test creating a new organisation."""
@@ -236,5 +234,58 @@ class TestOrganisationRepository:
         # Verify user is no longer in organisation
 
 
-# TODO: Add tests for DocumentRepository, DraftSessionRepository, RulebookRepository
-# when those classes are implemented
+@pytest.mark.unit
+class TestUploadSessionRepository:
+    """Test UploadSessionRepository."""
+
+    @pytest.fixture
+    def upload_session_repository(self, db_session):
+        """Provide an UploadSessionRepository instance."""
+        from app.persistence.repositories import UploadSessionRepository
+        return UploadSessionRepository(db_session)
+
+    def test_create_upload_session(self, upload_session_repository, case_factory, user_factory):
+        """Test creating a new upload session."""
+        case = case_factory()
+        user = user_factory()
+
+        session = upload_session_repository.create(
+            case_id=str(case.id),
+            uploaded_by_id=user.id,
+            total_documents=5,
+        )
+
+        assert session.id is not None
+        assert str(session.case_id) == str(case.id)
+        assert session.uploaded_by_id == user.id
+        assert session.total_documents == 5
+        assert session.completed_documents == 0
+        assert session.failed_documents == 0
+
+    def test_update_counts(self, upload_session_repository, case_factory, user_factory, db_session):
+        """Test updating document counts."""
+        from app.persistence.models import UploadSession
+
+        case = case_factory()
+        user = user_factory()
+
+        session = UploadSession(
+            case_id=case.id,
+            uploaded_by_id=user.id,
+            total_documents=10,
+        )
+        db_session.add(session)
+        db_session.flush()
+
+        updated = upload_session_repository.update_counts(
+            upload_session_id=str(session.id),
+            completed_increment=3,
+            failed_increment=1,
+        )
+
+        assert updated is not None
+        assert updated.completed_documents == 3
+        assert updated.failed_documents == 1
+
+
+# TODO: Add tests for DraftSessionRepository, RulebookRepository when needed

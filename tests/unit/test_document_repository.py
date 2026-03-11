@@ -33,7 +33,7 @@ class TestDocumentRepository:
 
         assert doc.id is not None
         assert doc.filename == "evidence.pdf"
-        assert doc.case_id == case.id
+        assert str(doc.case_id) == str(case.id)
         assert doc.uploaded_by_id == user.id
         assert doc.needs_ocr is True
         assert doc.overall_status == DocumentStatusEnum.QUEUED
