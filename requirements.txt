@@ -1,46 +1,72 @@
-# Core Framework
-flask==3.0.3
-flask-cors==4.0.1
+# Junior Counsel - Python Dependencies
+# Updated for Phase 2: FastAPI-based REST API implementation
+#
+# Installation: pip install -r requirements.txt
+#
+# Phase 1: Backend foundation (SQLAlchemy models + repositories)
+# Phase 2: REST API with FastAPI, JWT auth, and middleware
+# Phase 3: Worker implementation (OCR, RAG, LLM drafting)
 
-# Database
+# ===== Core Framework (Phase 2 - FastAPI recommended over Flask) =====
+fastapi==0.109.0
+uvicorn[standard]==0.27.0  # ASGI server with WebSocket support
+# flask==3.0.3  # Alternative: Flask (commented out in favor of FastAPI)
+# flask-cors==4.0.1  # (CORS built into FastAPI)
+
+# ===== Database (Phase 1) =====
 sqlalchemy==2.0.31
 psycopg2-binary==2.9.9
 alembic==1.13.2
+pgvector==0.2.5  # Vector embeddings for RAG (Phase 3)
 
-# pgvector for embeddings
-pgvector==0.2.5
-
-# Configuration
+# ===== Configuration (Phase 1) =====
 pydantic==2.8.2
 pydantic-settings==2.3.4
 python-dotenv==1.0.1
 
-# Queue/Workers
+# ===== Queue/Workers (Phase 2.4 + Phase 3) =====
 redis==5.0.7
 rq==1.16.2
 
-# Authentication
-werkzeug==3.0.3
-pyjwt==2.8.0
+# ===== Authentication (Phase 2) =====
+python-jose[cryptography]==3.3.0  # JWT tokens (recommended for FastAPI)
+passlib[bcrypt]==1.7.4  # Password hashing
+python-multipart==0.0.9  # File upload support
+email-validator==2.1.0  # Email validation for Pydantic
+# werkzeug==3.0.3  # (Flask dependency - not needed with FastAPI)
+# pyjwt==2.8.0  # (alternative to python-jose)
 
-# Testing
+# ===== Testing (Phase 1 + Phase 2) =====
 pytest==8.3.1
 pytest-cov==5.0.0
-pytest-asyncio==0.23.7
+pytest-asyncio==0.23.7  # Async test support for FastAPI
+httpx==0.26.0  # Async HTTP client for API testing
+faker==21.0.0  # Test data generation
 
-# Code Quality
-black==24.4.2
-flake8==7.1.0
-mypy==1.10.1
+# ===== Code Quality (Development) =====
+black==24.4.2  # Code formatting
+flake8==7.1.0  # Linting
+mypy==1.10.1  # Type checking
+isort==5.13.2  # Import sorting
 
-# API Documentation
-flask-openapi3==4.0.1
+# ===== Utilities =====
+python-dateutil==2.9.0.post0  # Date/time utilities
+requests==2.32.3  # HTTP client
+resend==1.1.0  # Email API (Phase 3 notifications)
 
-# Date/Time
-python-dateutil==2.9.0.post0
+# ===== API Documentation =====
+# (FastAPI has built-in Swagger/OpenAPI docs at /docs - no additional packages needed)
 
-# Email (Resend)
-resend==1.1.0
+# ===== Phase 3 Dependencies (Future - Commented Out) =====
+# openai==1.6.1  # OpenAI API client for LLM
+# anthropic==0.8.1  # Anthropic Claude API client
+# langchain==0.1.0  # LLM orchestration framework
+# pypdf==3.17.4  # PDF text extraction
+# pytesseract==0.3.10  # OCR support (Tesseract wrapper)
+# pillow==10.2.0  # Image processing for OCR
+# numpy==1.26.3  # Required for embeddings
 
-# Utilities
-requests==2.32.3
+# ===== Production Dependencies (Future - Commented Out) =====
+# gunicorn==21.2.0  # Production WSGI server (if using Flask)
+# sentry-sdk[fastapi]==1.40.0  # Error tracking and monitoring
+# prometheus-client==0.19.0  # Metrics collection
