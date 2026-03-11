@@ -106,13 +106,14 @@ def user_factory(db_session):
     from app.persistence.models import User
     import uuid
 
-    def _create_user(email=None, full_name="Test User"):
+    def _create_user(email=None, full_name="Test User", password_hash="$2b$12$placeholder_hash"):
         # Generate unique email if not provided
         if email is None:
             email = f"user-{uuid.uuid4().hex[:8]}@example.com"
 
         user = User(
             email=email,
+            password_hash=password_hash,
             full_name=full_name
         )
         db_session.add(user)

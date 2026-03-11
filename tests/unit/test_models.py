@@ -57,6 +57,7 @@ class TestUser:
         """Test creating a new user."""
         user = User(
             email="advocate@example.com",
+            password_hash="$2b$12$placeholder_hash_for_testing",
             full_name="John Advocate"
         )
         db_session.add(user)
@@ -65,12 +66,13 @@ class TestUser:
         assert user.id is not None
         assert user.email == "advocate@example.com"
         assert user.full_name == "John Advocate"
+        assert user.password_hash == "$2b$12$placeholder_hash_for_testing"
         assert isinstance(user.created_at, datetime)
 
     def test_user_unique_email(self, db_session):
         """Test that user emails must be unique."""
-        user1 = User(email="same@example.com", full_name="User One")
-        user2 = User(email="same@example.com", full_name="User Two")
+        user1 = User(email="same@example.com", password_hash="$2b$12$hash1", full_name="User One")
+        user2 = User(email="same@example.com", password_hash="$2b$12$hash2", full_name="User Two")
 
         db_session.add(user1)
         db_session.flush()
