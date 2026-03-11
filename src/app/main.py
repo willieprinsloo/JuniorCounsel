@@ -73,12 +73,20 @@ async def root():
 
 
 # Include API routers
-from app.api.v1 import auth
+from app.api.v1 import (
+    auth,
+    organisations,
+    cases,
+    documents,
+    upload_sessions,
+    draft_sessions,
+    rulebooks,
+)
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
-
-# TODO: Include remaining routers when created
-# from app.api.v1 import organisations, cases, documents
-# app.include_router(organisations.router, prefix="/api/v1/organisations", tags=["organisations"])
-# app.include_router(cases.router, prefix="/api/v1/cases", tags=["cases"])
-# app.include_router(documents.router, prefix="/api/v1/documents", tags=["documents"])
+app.include_router(organisations.router, prefix="/api/v1/organisations", tags=["organisations"])
+app.include_router(cases.router, prefix="/api/v1/cases", tags=["cases"])
+app.include_router(documents.router, prefix="/api/v1/documents", tags=["documents"])
+app.include_router(upload_sessions.router, prefix="/api/v1/upload-sessions", tags=["upload-sessions"])
+app.include_router(draft_sessions.router, prefix="/api/v1/draft-sessions", tags=["draft-sessions"])
+app.include_router(rulebooks.router, prefix="/api/v1/rulebooks", tags=["rulebooks"])
