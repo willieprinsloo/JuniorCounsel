@@ -1,0 +1,294 @@
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.db import Base
+
+
+def _uuid4() -> uuid.UUID:
+    return uuid.uuid4()
+
+
+class Organisation(Base):
+    __tablename__ = "organisations"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    users: Mapped[list["OrganisationUser"]] = relationship(back_populates="organisation")
+    cases: Mapped[list["Case"]] = relationship(back_populates="organisation")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    organisations: Mapped[list["OrganisationUser"]] = relationship(back_populates="user")
+    cases: Mapped[list["Case"]] = relationship(back_populates="owner")
+
+
+class OrganisationRoleEnum(str, Enum):
+    ADMIN = "admin"
+    PRACTITIONER = "practitioner"
+    STAFF = "staff"
+
+
+class OrganisationUser(Base):
+    __tablename__ = "organisation_users"
+    __table_args__ = (
+        UniqueConstraint("organisation_id", "user_id", name="uq_organisation_user"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    organisation_id: Mapped[int] = mapped_column(ForeignKey("organisations.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    role: Mapped[OrganisationRoleEnum] = mapped_column(Enum(OrganisationRoleEnum, name="organisation_role_enum"))
+
+    organisation: Mapped[Organisation] = relationship(back_populates="users")
+    user: Mapped[User] = relationship(back_populates="organisations")
+
+
+class CaseStatusEnum(str, Enum):
+    ACTIVE = "active"
+    CLOSED = "closed"
+    ARCHIVED = "archived"
+
+
+class Case(Base):
+    __tablename__ = "cases"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid4)
+    organisation_id: Mapped[int] = mapped_column(ForeignKey("organisations.id", ondelete="RESTRICT"), index=True)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    title: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    case_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[CaseStatusEnum] = mapped_column(Enum(CaseStatusEnum, name="case_status_enum"), default=CaseStatusEnum.ACTIVE)
+    jurisdiction: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    organisation: Mapped[Organisation] = relationship(back_populates="cases")
+    owner: Mapped[User | None] = relationship(back_populates="cases")
+    documents: Mapped[list["Document"]] = relationship(back_populates="case")
+
+
+class DocumentTypeEnum(str, Enum):
+    PLEADING = "pleading"
+    EVIDENCE = "evidence"
+    CORRESPONDENCE = "correspondence"
+    ORDER = "order"
+    RESEARCH = "research"
+    OTHER = "other"
+
+
+class DocumentStatusEnum(str, Enum):
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class DocumentStageEnum(str, Enum):
+    UPLOADING = "uploading"
+    OCR = "ocr"
+    TEXT_EXTRACTION = "text_extraction"
+    CHUNKING = "chunking"
+    EMBEDDING = "embedding"
+    INDEXING = "indexing"
+
+
+class Document(Base):
+    __tablename__ = "documents"
+    __table_args__ = (
+        UniqueConstraint("case_id", "filename", name="uq_case_document"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cases.id", ondelete="CASCADE"), index=True)
+    upload_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("upload_sessions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    uploaded_by_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+
+    filename: Mapped[str] = mapped_column(String(255))
+    file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)  # bytes
+    mime_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    pages: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    document_type: Mapped[DocumentTypeEnum] = mapped_column(
+        Enum(DocumentTypeEnum, name="document_type_enum"), default=DocumentTypeEnum.OTHER
+    )
+    document_subtype: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    tags: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Processing state
+    overall_status: Mapped[DocumentStatusEnum] = mapped_column(
+        Enum(DocumentStatusEnum, name="document_status_enum"), default=DocumentStatusEnum.QUEUED
+    )
+    stage: Mapped[DocumentStageEnum | None] = mapped_column(
+        Enum(DocumentStageEnum, name="document_stage_enum"), nullable=True
+    )
+    stage_progress: Mapped[int] = mapped_column(Integer, default=0)  # 0-100
+
+    # OCR metadata
+    needs_ocr: Mapped[bool] = mapped_column(Boolean, default=False)
+    ocr_confidence: Mapped[float | None] = mapped_column(nullable=True)
+    text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    case: Mapped[Case] = relationship(back_populates="documents")
+    uploaded_by: Mapped[User] = relationship()
+    upload_session: Mapped["UploadSession | None"] = relationship(back_populates="documents")
+    chunks: Mapped[list["DocumentChunk"]] = relationship(back_populates="document")
+
+
+class UploadSession(Base):
+    __tablename__ = "upload_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cases.id", ondelete="CASCADE"), index=True)
+    uploaded_by_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+
+    total_documents: Mapped[int] = mapped_column(Integer, default=0)
+    completed_documents: Mapped[int] = mapped_column(Integer, default=0)
+    failed_documents: Mapped[int] = mapped_column(Integer, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    uploaded_by: Mapped[User] = relationship()
+    documents: Mapped[list[Document]] = relationship(back_populates="upload_session")
+
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
+
+    text_content: Mapped[str] = mapped_column(Text)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    paragraph_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    paragraph_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # pgvector embedding (will need pgvector extension enabled)
+    # embedding: Mapped[list[float]] = mapped_column(Vector(1536), nullable=True)  # OpenAI ada-002 dimension
+
+    # Metadata for search filtering
+    chunk_type: Mapped[str | None] = mapped_column(String(64), nullable=True)  # heading, body, table, footnote
+    semantic_role: Mapped[str | None] = mapped_column(String(64), nullable=True)  # facts, orders_sought, argument, etc.
+    metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    document: Mapped[Document] = relationship(back_populates="chunks")
+
+
+class DraftSessionStatusEnum(str, Enum):
+    INITIALIZING = "initializing"
+    AWAITING_INTAKE = "awaiting_intake"
+    GENERATING = "generating"
+    READY = "ready"
+    FAILED = "failed"
+
+
+class DraftSession(Base):
+    __tablename__ = "draft_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cases.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    rulebook_id: Mapped[int] = mapped_column(ForeignKey("rulebooks.id", ondelete="RESTRICT"))
+
+    title: Mapped[str] = mapped_column(String(255))
+    document_type: Mapped[str] = mapped_column(String(128))
+
+    status: Mapped[DraftSessionStatusEnum] = mapped_column(
+        Enum(DraftSessionStatusEnum, name="draft_session_status_enum"), default=DraftSessionStatusEnum.INITIALIZING
+    )
+
+    # Research phase outputs
+    case_profile: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    research_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    outline: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Intake answers
+    intake_answers: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Generated DraftDoc
+    draft_doc: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user: Mapped[User] = relationship()
+    rulebook: Mapped["Rulebook"] = relationship()
+
+
+class RulebookStatusEnum(str, Enum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    DEPRECATED = "deprecated"
+
+
+class Rulebook(Base):
+    __tablename__ = "rulebooks"
+    __table_args__ = (
+        UniqueConstraint("document_type", "jurisdiction", "version", name="uq_rulebook_version"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    document_type: Mapped[str] = mapped_column(String(128), index=True)
+    jurisdiction: Mapped[str] = mapped_column(String(128), index=True)
+    version: Mapped[str] = mapped_column(String(32))
+    label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    status: Mapped[RulebookStatusEnum] = mapped_column(
+        Enum(RulebookStatusEnum, name="rulebook_status_enum"), default=RulebookStatusEnum.DRAFT
+    )
+
+    source_yaml: Mapped[str] = mapped_column(Text)
+    rules_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    created_by: Mapped[User] = relationship()
+
+
