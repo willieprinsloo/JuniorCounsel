@@ -1,0 +1,295 @@
+# Rulebook: Founding Affidavit (South African High Court)
+# Version: 1.0.0
+# Jurisdiction: South Africa - High Court
+# Document Type: Affidavit (Founding)
+#
+# This rulebook defines the structure and requirements for a founding affidavit
+# in South African High Court proceedings.
+
+metadata:
+  document_type: "affidavit"
+  jurisdiction: "south_africa_high_court"
+  version: "1.0.0"
+  label: "Founding Affidavit (High Court)"
+  description: "Founding affidavit for High Court motion proceedings"
+
+intake_questions:
+  - id: deponent_name
+    question: "Full name of the deponent"
+    field_type: text
+    required: true
+    help_text: "Enter the full name of the person making the affidavit"
+    validation: "^[A-Za-z\\s]{2,100}$"
+
+  - id: deponent_capacity
+    question: "In what capacity is the deponent acting?"
+    field_type: select
+    required: true
+    options:
+      - "Applicant in person"
+      - "Director of Applicant company"
+      - "Authorized representative"
+      - "Attorney of record"
+    help_text: "Select the deponent's capacity in this matter"
+
+  - id: case_number
+    question: "Case number (if already allocated)"
+    field_type: text
+    required: false
+    help_text: "Leave blank if not yet allocated by the court"
+    validation: "^[0-9]{1,10}/[0-9]{4}$"
+
+  - id: court_division
+    question: "Which Division of the High Court?"
+    field_type: select
+    required: true
+    options:
+      - "Gauteng Division, Pretoria"
+      - "Gauteng Division, Johannesburg"
+      - "Western Cape Division, Cape Town"
+      - "KwaZulu-Natal Division, Durban"
+      - "KwaZulu-Natal Division, Pietermaritzburg"
+      - "Eastern Cape Division, Port Elizabeth"
+      - "Eastern Cape Division, Mthatha"
+      - "Free State Division, Bloemfontein"
+      - "North West Division, Mahikeng"
+      - "Northern Cape Division, Kimberley"
+      - "Limpopo Division, Polokwane"
+      - "Mpumalanga Division, Mbombela"
+
+  - id: matter_type
+    question: "What type of matter is this?"
+    field_type: select
+    required: true
+    options:
+      - "Urgent application"
+      - "Motion proceedings"
+      - "Application for leave to appeal"
+      - "Interlocutory application"
+      - "Other"
+
+  - id: relief_sought
+    question: "Briefly describe the relief sought"
+    field_type: textarea
+    required: true
+    help_text: "Summarize the main relief you are seeking from the court"
+
+  - id: factual_basis
+    question: "Briefly describe the factual basis for the application"
+    field_type: textarea
+    required: true
+    help_text: "Provide a short summary of the key facts supporting your application"
+
+  - id: urgency_reason
+    question: "If urgent, explain the reason for urgency"
+    field_type: textarea
+    required: false
+    conditional_on: "matter_type == 'Urgent application'"
+    help_text: "Explain why ordinary process would not suffice"
+
+  - id: respondent_name
+    question: "Name of the Respondent(s)"
+    field_type: text
+    required: true
+    help_text: "Full name of the party opposing this application"
+
+document_structure:
+  - section_id: introduction
+    title: "INTRODUCTION"
+    required: true
+    minimum_paragraphs: 2
+    maximum_paragraphs: 5
+    content_template: |
+      Introduce the deponent, their capacity, and the purpose of the affidavit.
+      State that the deponent has personal knowledge of the facts deposed to.
+    prompt_guidance: |
+      Draft a formal introduction identifying the deponent, their capacity in this matter,
+      and confirming that they have personal knowledge of the facts stated in the affidavit.
+      Use South African High Court conventions.
+
+  - section_id: background
+    title: "BACKGROUND"
+    required: true
+    minimum_paragraphs: 3
+    maximum_paragraphs: 15
+    content_template: |
+      Set out the relevant background facts leading to this application.
+      Include dates, parties involved, and chronology of events.
+    prompt_guidance: |
+      Draft a clear narrative of the background facts, organized chronologically where appropriate.
+      Use numbered paragraphs and cite to supporting documents where available.
+
+  - section_id: material_facts
+    title: "MATERIAL FACTS"
+    required: true
+    minimum_paragraphs: 5
+    maximum_paragraphs: 30
+    content_template: |
+      Set out the material facts that support the application.
+      Each fact should be stated clearly and supported by evidence where possible.
+    prompt_guidance: |
+      Draft the material facts in numbered paragraphs. Each fact should be clear, concise, and
+      supported by documentary evidence where available. Use [N] citation markers to reference
+      source documents from the case materials.
+
+  - section_id: legal_basis
+    title: "LEGAL BASIS FOR THE RELIEF"
+    required: true
+    minimum_paragraphs: 2
+    maximum_paragraphs: 10
+    content_template: |
+      Explain the legal basis for the relief sought, citing relevant legislation,
+      case law, or legal principles.
+    prompt_guidance: |
+      Draft the legal grounds for the application, citing relevant statutes, regulations,
+      and case law. Use South African legal citation conventions.
+
+  - section_id: urgency
+    title: "URGENCY"
+    required: false
+    minimum_paragraphs: 2
+    maximum_paragraphs: 5
+    content_template: |
+      If this is an urgent application, explain why the matter is urgent and why
+      ordinary process would not suffice.
+    prompt_guidance: |
+      If the matter is urgent (based on intake responses), draft the urgency section
+      explaining the time-sensitive nature and the prejudice that would result from delay.
+      Reference the test for urgency in Luna Meubel Vervaardigers (Edms) Bpk v Makin and Another.
+
+  - section_id: prima_facie_right
+    title: "PRIMA FACIE RIGHT"
+    required: true
+    minimum_paragraphs: 1
+    maximum_paragraphs: 5
+    content_template: |
+      Explain the prima facie right that the applicant seeks to protect or enforce.
+    prompt_guidance: |
+      Draft a section establishing the applicant's prima facie right, citing to the material
+      facts and legal basis sections.
+
+  - section_id: balance_of_convenience
+    title: "BALANCE OF CONVENIENCE"
+    required: false
+    minimum_paragraphs: 1
+    maximum_paragraphs: 3
+    content_template: |
+      If relevant, address the balance of convenience between the parties.
+    prompt_guidance: |
+      If applicable to the relief sought, draft the balance of convenience analysis,
+      weighing the prejudice to the applicant if relief is not granted against the
+      prejudice to the respondent if it is granted.
+
+  - section_id: prayer
+    title: "PRAYER FOR RELIEF"
+    required: true
+    minimum_paragraphs: 1
+    maximum_paragraphs: 3
+    content_template: |
+      Conclude with the specific relief sought, referencing the Notice of Motion.
+    prompt_guidance: |
+      Draft a brief prayer for relief that corresponds to the relief described in the intake
+      responses. State that the relief is fully set out in the Notice of Motion.
+
+validation_rules:
+  - rule_id: has_all_required_sections
+    description: "All required sections must be present in the draft"
+    rule_type: section_presence
+    parameters:
+      required_sections:
+        - introduction
+        - background
+        - material_facts
+        - legal_basis
+        - prima_facie_right
+        - prayer
+    severity: error
+
+  - rule_id: minimum_paragraphs_material_facts
+    description: "Material facts section must have at least 5 paragraphs"
+    rule_type: minimum_length
+    parameters:
+      section_id: material_facts
+      minimum_paragraphs: 5
+    severity: warning
+
+  - rule_id: has_citations
+    description: "Draft should have at least 3 citations to source documents"
+    rule_type: citation_count
+    parameters:
+      minimum_citations: 3
+    severity: warning
+
+  - rule_id: deponent_name_used
+    description: "Deponent's name should appear in the introduction"
+    rule_type: intake_field_used
+    parameters:
+      field_id: deponent_name
+      section_id: introduction
+    severity: error
+
+research_query_templates:
+  - query_id: find_background_facts
+    template: "What are the background facts and chronology of events in this matter?"
+    description: "Searches for background information and timeline"
+    similarity_threshold: 0.7
+    max_results: 10
+
+  - query_id: find_material_facts
+    template: "What are the material facts relevant to {relief_sought}?"
+    description: "Searches for facts supporting the relief sought"
+    similarity_threshold: 0.75
+    max_results: 15
+
+  - query_id: find_legal_grounds
+    template: "What legal grounds support the application for {relief_sought}?"
+    description: "Searches for legal basis and precedents"
+    similarity_threshold: 0.7
+    max_results: 10
+
+  - query_id: find_urgency_facts
+    template: "What facts demonstrate urgency in this matter?"
+    description: "Searches for time-sensitive facts (if urgent application)"
+    similarity_threshold: 0.7
+    max_results: 5
+
+drafting_prompt:
+  system_message: |
+    You are an expert South African litigation attorney specializing in High Court motion proceedings.
+    You draft founding affidavits that comply with the Uniform Rules of Court and High Court practice directives.
+
+    Your affidavits are:
+    - Clear, concise, and factual
+    - Properly structured with numbered paragraphs
+    - Supported by citations to documentary evidence
+    - Written in formal legal language appropriate for South African courts
+    - Compliant with requirements for founding affidavits (setting out material facts, legal basis, and relief sought)
+
+    When drafting, you:
+    - Use [N] markers to cite source documents
+    - Avoid legal argument (save for heads of argument)
+    - State facts clearly and chronologically where appropriate
+    - Avoid hearsay unless properly qualified
+    - Use gender-neutral language
+
+  temperature: 0.5
+  max_tokens: 6000
+  style_guidance: |
+    - Use formal legal register appropriate for South African High Court
+    - Number all paragraphs sequentially
+    - Use clear, unambiguous language
+    - Avoid colloquialisms and informal expressions
+    - When citing case law, use proper South African citation format (e.g., "Case Name [Year] ZASCA 123")
+    - When citing statutes, use full title on first reference, then short title
+    - Use "the Applicant" and "the Respondent" (capitalized) when referring to parties
+    - Begin each section with a clear heading in CAPITALS
+    - Use "I submit that..." or "I aver that..." when stating facts within personal knowledge
+    - Use "I am advised and believe that..." for facts outside personal knowledge
+
+  citation_format: numbered
+  south_african_conventions: true
+
+custom_fields:
+  document_category: "motion_proceedings"
+  court_level: "high_court"
+  practice_area: "civil_litigation"

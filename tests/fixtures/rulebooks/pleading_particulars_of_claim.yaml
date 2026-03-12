@@ -1,0 +1,244 @@
+# Rulebook: Particulars of Claim (South African High Court)
+# Version: 1.0.0
+# Jurisdiction: South Africa - High Court
+# Document Type: Pleading (Particulars of Claim)
+#
+# This rulebook defines the structure and requirements for particulars of claim
+# in South African High Court action proceedings.
+
+metadata:
+  document_type: "pleading"
+  jurisdiction: "south_africa_high_court"
+  version: "1.0.0"
+  label: "Particulars of Claim (High Court)"
+  description: "Particulars of Claim for High Court action proceedings"
+
+intake_questions:
+  - id: plaintiff_name
+    question: "Full name of the Plaintiff"
+    field_type: text
+    required: true
+    help_text: "Enter the full name of the party instituting the claim"
+
+  - id: defendant_name
+    question: "Full name of the Defendant"
+    field_type: text
+    required: true
+    help_text: "Enter the full name of the party being sued"
+
+  - id: claim_type
+    question: "What type of claim is this?"
+    field_type: select
+    required: true
+    options:
+      - "Breach of contract"
+      - "Delict (unlawful conduct)"
+      - "Unjust enrichment"
+      - "Debt collection"
+      - "Damages for loss"
+      - "Other"
+
+  - id: cause_of_action
+    question: "Briefly describe the cause of action"
+    field_type: textarea
+    required: true
+    help_text: "Summarize the legal basis for the claim"
+
+  - id: amount_claimed
+    question: "Amount claimed (if applicable)"
+    field_type: text
+    required: false
+    help_text: "Enter the monetary amount claimed (e.g., R 100,000.00)"
+    validation: "^R\\s?[0-9,]+(\\.[0-9]{2})?$"
+
+  - id: interest_claimed
+    question: "Is interest claimed?"
+    field_type: boolean
+    required: true
+    default_value: "true"
+
+  - id: interest_rate
+    question: "If interest is claimed, at what rate?"
+    field_type: select
+    required: false
+    conditional_on: "interest_claimed == true"
+    options:
+      - "Legal rate (10.25% per annum)"
+      - "Mora interest at legal rate"
+      - "Contractual rate"
+      - "Other"
+
+  - id: costs_claimed
+    question: "Are costs claimed?"
+    field_type: boolean
+    required: true
+    default_value: "true"
+
+document_structure:
+  - section_id: parties
+    title: "THE PARTIES"
+    required: true
+    minimum_paragraphs: 2
+    maximum_paragraphs: 5
+    content_template: |
+      Identify the Plaintiff and Defendant with sufficient detail.
+      Include addresses, registration numbers (if companies), and citizenship/domicile.
+    prompt_guidance: |
+      Draft a clear identification of the parties, using the format:
+      "The Plaintiff is [name], an adult [male/female] with identity number [...], residing at [...]"
+      Include all details necessary to identify the parties and establish jurisdiction.
+
+  - section_id: background
+    title: "BACKGROUND AND CONTEXT"
+    required: false
+    minimum_paragraphs: 2
+    maximum_paragraphs: 10
+    content_template: |
+      Provide relevant background information that contextualizes the claim.
+    prompt_guidance: |
+      Draft background facts that help the court understand the relationship between
+      the parties and the context in which the dispute arose.
+
+  - section_id: material_allegations
+    title: "MATERIAL ALLEGATIONS"
+    required: true
+    minimum_paragraphs: 5
+    maximum_paragraphs: 40
+    content_template: |
+      Set out the material facts that constitute the cause of action.
+      Each allegation should be clear, specific, and supported by evidence where possible.
+    prompt_guidance: |
+      Draft the material allegations in numbered paragraphs. Be specific about:
+      - What the Defendant did or failed to do
+      - When it occurred
+      - The legal duty that was breached
+      - How the Plaintiff was harmed
+      Use [N] citation markers to reference supporting documents.
+
+  - section_id: breach
+    title: "BREACH OF DUTY/CONTRACT"
+    required: true
+    minimum_paragraphs: 2
+    maximum_paragraphs: 15
+    content_template: |
+      Specifically allege how the Defendant breached their duty or contractual obligations.
+    prompt_guidance: |
+      Clearly state the legal duty owed by the Defendant and how it was breached.
+      If based on contract, identify the specific terms breached.
+      If based on delict, identify the unlawful conduct.
+
+  - section_id: causation_and_damages
+    title: "CAUSATION AND DAMAGES"
+    required: true
+    minimum_paragraphs: 3
+    maximum_paragraphs: 15
+    content_template: |
+      Allege causation (breach caused the loss) and quantify damages suffered.
+    prompt_guidance: |
+      Draft allegations showing:
+      1. The breach caused the Plaintiff's loss (causation)
+      2. The quantum of damages suffered
+      3. How damages are calculated
+      Be specific about amounts and provide a breakdown if claiming multiple heads of damages.
+
+  - section_id: prayer
+    title: "PRAYER FOR RELIEF"
+    required: true
+    minimum_paragraphs: 1
+    maximum_paragraphs: 2
+    content_template: |
+      State the specific relief sought (payment, interest, costs).
+    prompt_guidance: |
+      Draft a clear prayer for relief including:
+      - Main claim (e.g., payment of R [...])
+      - Interest (if applicable)
+      - Costs of suit
+      Use the standard format: "WHEREFORE Plaintiff prays for judgment against Defendant for:"
+
+validation_rules:
+  - rule_id: has_required_sections
+    description: "All required sections must be present"
+    rule_type: section_presence
+    parameters:
+      required_sections:
+        - parties
+        - material_allegations
+        - breach
+        - causation_and_damages
+        - prayer
+    severity: error
+
+  - rule_id: minimum_material_allegations
+    description: "Material allegations must have at least 5 paragraphs"
+    rule_type: minimum_length
+    parameters:
+      section_id: material_allegations
+      minimum_paragraphs: 5
+    severity: error
+
+  - rule_id: has_citations
+    description: "Should have at least 2 citations to supporting documents"
+    rule_type: citation_count
+    parameters:
+      minimum_citations: 2
+    severity: warning
+
+research_query_templates:
+  - query_id: find_contract_terms
+    template: "What are the terms of the contract between the parties?"
+    description: "Searches for contractual provisions"
+    similarity_threshold: 0.75
+    max_results: 10
+
+  - query_id: find_breach_evidence
+    template: "What evidence shows that {defendant_name} breached their obligations?"
+    description: "Searches for evidence of breach"
+    similarity_threshold: 0.7
+    max_results: 15
+
+  - query_id: find_damages_evidence
+    template: "What evidence supports the quantum of damages claimed?"
+    description: "Searches for damages calculations and supporting documents"
+    similarity_threshold: 0.7
+    max_results: 10
+
+drafting_prompt:
+  system_message: |
+    You are an expert South African litigator specializing in drafting pleadings for High Court action proceedings.
+    You draft clear, concise particulars of claim that comply with the Uniform Rules of Court.
+
+    Your pleadings are:
+    - Factually specific and detailed
+    - Properly structured with numbered paragraphs
+    - Supported by documentary evidence where available
+    - Legally sound and properly plead all elements of the cause of action
+    - Written in formal pleading style
+
+    When drafting, you:
+    - Plead material facts, not evidence or law
+    - Use [N] markers to cite supporting documents
+    - Avoid vague or ambiguous language
+    - Ensure all elements of the cause of action are pleaded
+    - Follow South African pleading conventions
+
+  temperature: 0.4
+  max_tokens: 5000
+  style_guidance: |
+    - Use formal pleading language
+    - Number all paragraphs sequentially
+    - Refer to parties as "the Plaintiff" and "the Defendant" (capitalized)
+    - Use "avers that" or "pleads that" when making allegations
+    - Be specific: "On or about [date], the Defendant [specific action]"
+    - Avoid generalities: instead of "the Defendant failed to pay", state "the Defendant failed to pay R [amount] due on [date]"
+    - Plead facts, not conclusions of law
+    - Each paragraph should contain one distinct allegation or fact
+    - Use section headings in CAPITALS
+    - End with "WHEREFORE Plaintiff prays for judgment..."
+
+  citation_format: numbered
+  south_african_conventions: true
+
+custom_fields:
+  document_category: "action_proceedings"
+  court_level: "high_court"
+  practice_area: "civil_litigation"
