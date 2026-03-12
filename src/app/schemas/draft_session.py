@@ -40,10 +40,18 @@ class DraftSessionResponse(BaseModel):
     title: str
     document_type: str
     status: DraftSessionStatusEnum
-    intake_responses: Optional[dict] = None
+
+    # Research phase outputs
+    case_profile: Optional[dict] = None
     research_summary: Optional[dict] = None
-    generated_content: Optional[str] = None
-    final_content: Optional[str] = None
+    outline: Optional[dict] = None
+
+    # Intake responses
+    intake_responses: Optional[dict] = None
+
+    # Generated DraftDoc
+    draft_doc: Optional[dict] = None
+
     error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -59,3 +67,32 @@ class DraftSessionListResponse(BaseModel):
     per_page: int
     total: int
     next_page: Optional[int] = None
+
+
+class IntakeResponsesSubmit(BaseModel):
+    """Schema for submitting intake responses."""
+
+    intake_responses: dict
+
+    model_config = {"str_strip_whitespace": True}
+
+
+class CitationResponse(BaseModel):
+    """Schema for a single citation."""
+
+    marker: str  # e.g., "[1]", "[2]"
+    content: str  # Excerpt from source document
+    document_name: str
+    document_id: str
+    page: Optional[int] = None
+    similarity: Optional[float] = None
+
+    model_config = {"from_attributes": True}
+
+
+class CitationsListResponse(BaseModel):
+    """Schema for list of citations in audit mode."""
+
+    draft_session_id: str
+    citations: list[CitationResponse]
+    total_citations: int

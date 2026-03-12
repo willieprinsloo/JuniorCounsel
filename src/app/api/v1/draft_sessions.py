@@ -15,6 +15,9 @@ from app.schemas.draft_session import (
     DraftSessionUpdate,
     DraftSessionResponse,
     DraftSessionListResponse,
+    IntakeResponsesSubmit,
+    CitationResponse,
+    CitationsListResponse,
 )
 
 router = APIRouter()
@@ -210,3 +213,197 @@ def delete_draft_session(
 
     db.delete(draft_session)
     db.flush()
+
+
+@router.post("/{draft_session_id}/answers", response_model=DraftSessionResponse)
+def submit_intake_responses(
+    draft_session_id: str,
+    intake_data: IntakeResponsesSubmit,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Submit intake responses for a draft session.
+
+    Updates the draft session with user's answers to intake questions
+    and transitions status to AWAITING_INTAKE → ready for generation.
+
+    Requires authentication.
+
+    Args:
+        draft_session_id: Draft session ID (UUID)
+        intake_data: Intake responses (dict of field_id → value)
+        db: Database session
+        current_user: Current authenticated user
+
+    Returns:
+        Updated draft session object with intake_responses populated
+
+    Raises:
+        HTTPException: If draft session not found (404)
+        HTTPException: If draft session not in valid state for intake (400)
+    """
+    draft_repo = DraftSessionRepository(db)
+    draft_session = draft_repo.get_by_id(draft_session_id)
+
+    if not draft_session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Draft session not found"
+        )
+
+    # Validate status (should be INITIALIZING or AWAITING_INTAKE)
+    if draft_session.status not in [
+        DraftSessionStatusEnum.INITIALIZING,
+        DraftSessionStatusEnum.AWAITING_INTAKE
+    ]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot submit intake for draft in {draft_session.status} status"
+        )
+
+    # Update intake responses
+    draft_session.intake_responses = intake_data.intake_responses
+    draft_session.status = DraftSessionStatusEnum.AWAITING_INTAKE
+
+    db.flush()
+    return draft_session
+
+
+@router.post("/{draft_session_id}/start-generation", response_model=DraftSessionResponse)
+def start_draft_generation(
+    draft_session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Start draft generation for a draft session.
+
+    Enqueues background jobs for research and draft generation.
+    Transitions status to RESEARCH → background workers process.
+
+    Requires authentication.
+
+    Args:
+        draft_session_id: Draft session ID (UUID)
+        db: Database session
+        current_user: Current authenticated user
+
+    Returns:
+        Draft session object with updated status (RESEARCH)
+
+    Raises:
+        HTTPException: If draft session not found (404)
+        HTTPException: If draft session not ready for generation (400)
+        HTTPException: If intake responses missing (400)
+    """
+    draft_repo = DraftSessionRepository(db)
+    draft_session = draft_repo.get_by_id(draft_session_id)
+
+    if not draft_session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Draft session not found"
+        )
+
+    # Validate status (should be AWAITING_INTAKE)
+    if draft_session.status != DraftSessionStatusEnum.AWAITING_INTAKE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot start generation for draft in {draft_session.status} status. "
+                   f"Expected {DraftSessionStatusEnum.AWAITING_INTAKE}"
+        )
+
+    # Validate intake responses provided
+    if not draft_session.intake_responses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Intake responses required before starting generation. "
+                   "Submit answers first via POST /draft-sessions/{id}/answers"
+        )
+
+    # Enqueue draft research job (will auto-trigger generation after research)
+    from app.core.queue import enqueue_draft_research
+
+    try:
+        job_id = enqueue_draft_research(draft_session_id)
+        draft_session.status = DraftSessionStatusEnum.RESEARCH
+        db.flush()
+
+        return draft_session
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to enqueue draft generation: {str(e)}"
+        )
+
+
+@router.get("/{draft_session_id}/citations", response_model=CitationsListResponse)
+def get_draft_citations(
+    draft_session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get citations for a draft session (Audit mode).
+
+    Returns all citations with source excerpts for verification.
+    Used in Audit mode to show side-by-side source documents.
+
+    Requires authentication.
+
+    Args:
+        draft_session_id: Draft session ID (UUID)
+        db: Database session
+        current_user: Current authenticated user
+
+    Returns:
+        List of citations with source document excerpts
+
+    Raises:
+        HTTPException: If draft session not found (404)
+        HTTPException: If draft not yet generated (400)
+    """
+    draft_repo = DraftSessionRepository(db)
+    draft_session = draft_repo.get_by_id(draft_session_id)
+
+    if not draft_session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Draft session not found"
+        )
+
+    # Validate draft has been generated
+    if draft_session.status not in [
+        DraftSessionStatusEnum.REVIEW,
+        DraftSessionStatusEnum.READY
+    ]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Citations not available for draft in {draft_session.status} status. "
+                   f"Draft must be generated first."
+        )
+
+    # Extract citations from draft_doc (stored during generation)
+    # Note: In Phase 4.4, this will query the Citation model instead
+    citations_data = []
+
+    if draft_session.draft_doc and "citations" in draft_session.draft_doc:
+        citations_raw = draft_session.draft_doc["citations"]
+
+        for citation in citations_raw:
+            citations_data.append(CitationResponse(
+                marker=citation.get("marker", ""),
+                content=citation.get("content", ""),
+                document_name=citation.get("document", ""),
+                document_id=citation.get("document_id", ""),
+                page=citation.get("page"),
+                similarity=citation.get("similarity")
+            ))
+
+    return CitationsListResponse(
+        draft_session_id=draft_session_id,
+        citations=citations_data,
+        total_citations=len(citations_data)
+    )

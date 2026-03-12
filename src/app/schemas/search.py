@@ -1,7 +1,7 @@
 """
 Pydantic schemas for search endpoints.
 """
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
@@ -22,10 +22,9 @@ class SearchResult(BaseModel):
     content: str = Field(..., description="Chunk content")
     page_number: int = Field(..., description="Page number")
     similarity: float = Field(..., description="Similarity score (0-1)")
-    citation: Dict[str, any] = Field(..., description="Citation metadata")
+    citation: Dict[str, Any] = Field(..., description="Citation metadata")
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class SearchResponse(BaseModel):
