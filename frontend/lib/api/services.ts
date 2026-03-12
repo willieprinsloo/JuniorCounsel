@@ -260,3 +260,143 @@ export const usageAPI = {
     return apiClient.get<UsageSummary>(`/api/v1/usage/document/${documentId}`);
   },
 };
+
+// Admin - User Management
+import type {
+  AdminUser,
+  AdminUserCreate,
+  AdminUserUpdate,
+  AdminUserListResponse,
+} from '@/types/api';
+
+export const adminUsersAPI = {
+  list: async (params?: {
+    q?: string;
+    page?: number;
+    per_page?: number;
+    sort?: string;
+    order?: string;
+  }): Promise<AdminUserListResponse> => {
+    return apiClient.get<AdminUserListResponse>('/api/v1/admin/users/', params);
+  },
+
+  get: async (userId: number): Promise<AdminUser> => {
+    return apiClient.get<AdminUser>(`/api/v1/admin/users/${userId}`);
+  },
+
+  create: async (data: AdminUserCreate): Promise<AdminUser> => {
+    return apiClient.post<AdminUser>('/api/v1/admin/users/', data);
+  },
+
+  update: async (userId: number, data: AdminUserUpdate): Promise<AdminUser> => {
+    return apiClient.patch<AdminUser>(`/api/v1/admin/users/${userId}`, data);
+  },
+
+  delete: async (userId: number): Promise<void> => {
+    return apiClient.delete<void>(`/api/v1/admin/users/${userId}`);
+  },
+};
+
+// Admin - Organisation Management
+import type {
+  Organisation,
+  OrganisationCreate,
+  OrganisationUpdate,
+  OrganisationListResponse,
+  OrganisationMember,
+  OrganisationMemberAdd,
+  OrganisationMemberUpdate,
+  OrganisationMemberListResponse,
+} from '@/types/api';
+
+export const adminOrganisationsAPI = {
+  list: async (params?: {
+    is_active?: boolean;
+    page?: number;
+    per_page?: number;
+    sort?: string;
+    order?: string;
+  }): Promise<OrganisationListResponse> => {
+    return apiClient.get<OrganisationListResponse>('/api/v1/admin/organisations/', params);
+  },
+
+  get: async (organisationId: number): Promise<Organisation> => {
+    return apiClient.get<Organisation>(`/api/v1/admin/organisations/${organisationId}`);
+  },
+
+  create: async (data: OrganisationCreate): Promise<Organisation> => {
+    return apiClient.post<Organisation>('/api/v1/admin/organisations/', data);
+  },
+
+  update: async (organisationId: number, data: OrganisationUpdate): Promise<Organisation> => {
+    return apiClient.patch<Organisation>(`/api/v1/admin/organisations/${organisationId}`, data);
+  },
+
+  // Member management
+  listMembers: async (
+    organisationId: number,
+    params?: {
+      role?: string;
+      page?: number;
+      per_page?: number;
+    }
+  ): Promise<OrganisationMemberListResponse> => {
+    return apiClient.get<OrganisationMemberListResponse>(
+      `/api/v1/admin/organisations/${organisationId}/members`,
+      params
+    );
+  },
+
+  addMember: async (
+    organisationId: number,
+    data: OrganisationMemberAdd
+  ): Promise<OrganisationMember> => {
+    return apiClient.post<OrganisationMember>(
+      `/api/v1/admin/organisations/${organisationId}/members`,
+      data
+    );
+  },
+
+  updateMemberRole: async (
+    organisationId: number,
+    userId: number,
+    data: OrganisationMemberUpdate
+  ): Promise<OrganisationMember> => {
+    return apiClient.patch<OrganisationMember>(
+      `/api/v1/admin/organisations/${organisationId}/members/${userId}`,
+      data
+    );
+  },
+
+  removeMember: async (organisationId: number, userId: number): Promise<void> => {
+    return apiClient.delete<void>(
+      `/api/v1/admin/organisations/${organisationId}/members/${userId}`
+    );
+  },
+};
+
+// Admin - Rulebook Management
+import type {
+  Rulebook,
+  RulebookUpload,
+  RulebookUpdate,
+  RulebookDetail,
+} from '@/types/api';
+
+export const adminRulebooksAPI = {
+  upload: async (data: RulebookUpload): Promise<Rulebook> => {
+    return apiClient.post<Rulebook>('/api/v1/admin/rulebooks/', data);
+  },
+
+  update: async (rulebookId: number, data: RulebookUpdate): Promise<Rulebook> => {
+    return apiClient.patch<Rulebook>(`/api/v1/admin/rulebooks/${rulebookId}`, data);
+  },
+
+  publish: async (rulebookId: number): Promise<Rulebook> => {
+    return apiClient.post<Rulebook>(`/api/v1/admin/rulebooks/${rulebookId}/publish`, {});
+  },
+
+  deprecate: async (rulebookId: number): Promise<Rulebook> => {
+    return apiClient.post<Rulebook>(`/api/v1/admin/rulebooks/${rulebookId}/deprecate`, {});
+  },
+};

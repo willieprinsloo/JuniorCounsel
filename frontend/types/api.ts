@@ -312,3 +312,109 @@ export interface UsageDashboard {
   start_date: string;
   end_date: string;
 }
+
+// Admin types
+export enum OrganisationRole {
+  ADMIN = 'admin',
+  PRACTITIONER = 'practitioner',
+  STAFF = 'staff',
+}
+
+export interface OrganisationMembership {
+  organisation_id: number;
+  organisation_name: string;
+  role: OrganisationRole;
+  joined_at: string;
+}
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  full_name: string | null;
+  created_at: string;
+  updated_at: string;
+  organisations: OrganisationMembership[];
+}
+
+export interface AdminUserCreate {
+  email: string;
+  password: string;
+  full_name?: string;
+}
+
+export interface AdminUserUpdate {
+  email?: string;
+  password?: string;
+  full_name?: string;
+}
+
+export interface AdminUserListResponse {
+  data: AdminUser[];
+  page: number;
+  per_page: number;
+  total: number;
+  next_page: number | null;
+}
+
+export interface OrganisationCreate {
+  name: string;
+  contact_email?: string;
+  is_active?: boolean;
+}
+
+export interface OrganisationUpdate {
+  name?: string;
+  contact_email?: string;
+  is_active?: boolean;
+}
+
+export interface OrganisationListResponse {
+  data: Organisation[];
+  page: number;
+  per_page: number;
+  total: number;
+  next_page: number | null;
+}
+
+export interface OrganisationMember {
+  id: number;
+  user_id: number;
+  email: string;
+  full_name: string | null;
+  role: OrganisationRole;
+  joined_at: string;
+}
+
+export interface OrganisationMemberAdd {
+  user_id: number;
+  role: OrganisationRole;
+}
+
+export interface OrganisationMemberUpdate {
+  role: OrganisationRole;
+}
+
+export interface OrganisationMemberListResponse {
+  data: OrganisationMember[];
+  page: number;
+  per_page: number;
+  total: number;
+  next_page: number | null;
+}
+
+export interface RulebookUpload {
+  document_type: string;
+  jurisdiction: string;
+  version: string;
+  source_yaml: string;
+  label?: string;
+}
+
+export interface RulebookUpdate {
+  label?: string;
+  source_yaml?: string;
+}
+
+export interface RulebookDetail extends Rulebook {
+  source_yaml?: string;
+}
