@@ -9,8 +9,11 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Enum as SQLEnum,
+    Float,
     ForeignKey,
+    Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -313,5 +316,71 @@ class Citation(Base):
 
     draft_session: Mapped[DraftSession] = relationship()
     document_chunk: Mapped[DocumentChunk] = relationship()
+
+
+class TokenUsageTypeEnum(str, enum.Enum):
+    """Type of API operation that consumed tokens."""
+    EMBEDDING = "embedding"  # Vector embedding generation
+    LLM_GENERATION = "llm_generation"  # LLM text generation (Q&A, drafting)
+    LLM_QA = "llm_qa"  # Specifically Q&A operations
+    OCR = "ocr"  # OCR API calls (if using paid service)
+
+
+class TokenUsage(Base):
+    """
+    Track API token usage for cost attribution and quota management.
+
+    Records every API call to LLM/embedding providers with:
+    - Token counts (input, output, total)
+    - Cost estimation
+    - User/org/case attribution
+    - Resource context (draft_session_id, document_id, etc.)
+    """
+    __tablename__ = "token_usage"
+    __table_args__ = (
+        Index("idx_token_usage_org_created", "organisation_id", "created_at"),
+        Index("idx_token_usage_user_created", "user_id", "created_at"),
+        Index("idx_token_usage_case", "case_id"),
+        Index("idx_token_usage_resource", "resource_type", "resource_id"),
+        Index("idx_token_usage_type_created", "usage_type", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid4)
+
+    # Attribution - who/what consumed the tokens
+    organisation_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("organisations.id", ondelete="CASCADE"), nullable=True
+    )
+    user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    case_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("cases.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Context - what operation/resource triggered this usage
+    usage_type: Mapped[TokenUsageTypeEnum] = mapped_column()
+    resource_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # "draft_session", "document", "chat_session"
+    resource_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # UUID of related resource
+
+    # Provider and model details
+    provider: Mapped[str] = mapped_column(String(32))  # "openai", "anthropic"
+    model: Mapped[str] = mapped_column(String(64))  # "gpt-4-turbo", "claude-3-opus-20240229"
+
+    # Token counts
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Cost estimation (calculated based on provider pricing at time of call)
+    estimated_cost_usd: Mapped[Optional[float]] = mapped_column(Numeric(10, 6), nullable=True)  # Up to $9999.999999
+
+    # Metadata
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    # Relationships
+    organisation: Mapped[Optional[Organisation]] = relationship()
+    user: Mapped[Optional[User]] = relationship()
+    case: Mapped[Optional[Case]] = relationship()
 
 

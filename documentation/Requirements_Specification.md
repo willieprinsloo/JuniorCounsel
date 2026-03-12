@@ -162,6 +162,37 @@ The primary objective is to deliver a **court‑ready drafting assistant for Sou
   - Real‑time validation feedback on errors.
   - A test harness to run validation and sample generation against a rulebook.
 
+#### 3.10 Token Usage Tracking and Cost Management
+
+- **FR‑44**: The system must track all API token usage for cost attribution and transparency:
+  - LLM generation calls (Q&A, drafting)
+  - Embedding generation calls (document processing, search)
+  - OCR API calls (if using paid service)
+- **FR‑45**: Each API call must record:
+  - Provider (openai, anthropic) and model used
+  - Token counts (input tokens, output tokens, total tokens)
+  - User, organisation, and case attribution
+  - Resource context (draft_session_id, document_id, chat_session_id, etc.)
+  - Estimated cost in USD based on current API pricing
+  - Timestamp
+- **FR‑46**: Users must be able to view their own usage dashboard showing:
+  - Monthly token usage and estimated costs
+  - Breakdown by usage type (drafting, Q&A, embeddings, OCR)
+  - Top cases by cost
+  - Usage trends over time (last 6 months)
+- **FR‑47**: Organisation admins must be able to view organisation‑wide usage:
+  - Total usage across all users in the organisation
+  - Per‑user usage breakdown
+  - Per‑case cost attribution
+  - Filterable by date range, user, case, usage type
+  - Exportable usage reports (CSV format)
+- **FR‑48**: The system must support optional usage quotas and alerts:
+  - Monthly token quotas per organisation (null = unlimited)
+  - Monthly cost quotas in USD (null = unlimited)
+  - Automatic enforcement (return HTTP 429 when quota exceeded)
+  - Warning notifications sent at 80% and 100% quota usage
+  - Grace period configuration for quota overruns
+
 ---
 
 ### 4. Non‑Functional Requirements

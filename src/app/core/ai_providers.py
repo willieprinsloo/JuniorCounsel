@@ -4,7 +4,7 @@ AI provider abstraction layer.
 Supports OpenAI, Anthropic, and local models.
 """
 import logging
-from typing import Optional, List
+from typing import Optional, List, NamedTuple
 
 try:
     from openai import OpenAI
@@ -23,6 +23,21 @@ except ImportError:
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class EmbeddingResult(NamedTuple):
+    """Result from embedding generation with usage stats."""
+    embedding: List[float]
+    input_tokens: int
+    model: str
+
+
+class GenerationResult(NamedTuple):
+    """Result from LLM generation with usage stats."""
+    content: str
+    input_tokens: int
+    output_tokens: int
+    model: str
 
 
 class EmbeddingProvider:
@@ -58,15 +73,15 @@ class EmbeddingProvider:
         else:
             raise ValueError(f"Unsupported embedding provider: {self.provider}")
 
-    def embed_text(self, text: str) -> List[float]:
+    def embed_text(self, text: str) -> EmbeddingResult:
         """
-        Generate embedding for a single text.
+        Generate embedding for a single text with usage tracking.
 
         Args:
             text: Text to embed (max 8192 tokens for text-embedding-3-small)
 
         Returns:
-            Embedding vector (1536 dimensions for text-embedding-3-small)
+            EmbeddingResult with embedding vector and token usage
 
         Raises:
             ValueError: If text is empty
@@ -81,21 +96,33 @@ class EmbeddingProvider:
                     input=text,
                     model=self.model
                 )
-                return response.data[0].embedding
+                # OpenAI returns usage.total_tokens for embeddings
+                input_tokens = response.usage.total_tokens if hasattr(response, 'usage') else self._estimate_tokens(text)
+
+                return EmbeddingResult(
+                    embedding=response.data[0].embedding,
+                    input_tokens=input_tokens,
+                    model=self.model
+                )
             except Exception as e:
                 logger.error(f"OpenAI embedding generation failed: {e}")
                 raise RuntimeError(f"Failed to generate embedding: {str(e)}")
 
-    def embed_batch(self, texts: List[str], batch_size: int = 100) -> List[List[float]]:
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        """Rough estimation: 1 token ≈ 4 characters for English text."""
+        return len(text) // 4
+
+    def embed_batch(self, texts: List[str], batch_size: int = 100) -> tuple[List[List[float]], int]:
         """
-        Generate embeddings for multiple texts.
+        Generate embeddings for multiple texts with total token usage.
 
         Args:
             texts: List of texts to embed
             batch_size: Number of texts per API call (max 2048 for OpenAI)
 
         Returns:
-            List of embedding vectors
+            Tuple of (embeddings list, total_tokens_used)
 
         Raises:
             ValueError: If texts is empty
@@ -111,6 +138,7 @@ class EmbeddingProvider:
 
         if self.provider == "openai":
             embeddings = []
+            total_tokens = 0
             for i in range(0, len(valid_texts), batch_size):
                 batch = valid_texts[i:i+batch_size]
                 try:
@@ -119,12 +147,18 @@ class EmbeddingProvider:
                         model=self.model
                     )
                     embeddings.extend([item.embedding for item in response.data])
+                    # Track token usage from batch
+                    if hasattr(response, 'usage'):
+                        total_tokens += response.usage.total_tokens
+                    else:
+                        # Estimate if not provided
+                        total_tokens += sum(self._estimate_tokens(t) for t in batch)
                     logger.debug(f"Generated embeddings for batch {i//batch_size + 1} ({len(batch)} texts)")
                 except Exception as e:
                     logger.error(f"OpenAI batch embedding generation failed for batch {i//batch_size + 1}: {e}")
                     raise RuntimeError(f"Failed to generate batch embeddings: {str(e)}")
 
-            return embeddings
+            return embeddings, total_tokens
 
 
 class LLMProvider:
@@ -170,9 +204,9 @@ class LLMProvider:
         system_message: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 4000
-    ) -> str:
+    ) -> GenerationResult:
         """
-        Generate text completion.
+        Generate text completion with usage tracking.
 
         Args:
             prompt: User prompt
@@ -181,7 +215,7 @@ class LLMProvider:
             max_tokens: Maximum response length
 
         Returns:
-            Generated text
+            GenerationResult with content and token usage
 
         Raises:
             ValueError: If prompt is empty
@@ -203,7 +237,12 @@ class LLMProvider:
                     temperature=temperature,
                     max_tokens=max_tokens
                 )
-                return response.choices[0].message.content
+                return GenerationResult(
+                    content=response.choices[0].message.content,
+                    input_tokens=response.usage.prompt_tokens,
+                    output_tokens=response.usage.completion_tokens,
+                    model=self.model
+                )
             except Exception as e:
                 logger.error(f"OpenAI generation failed: {e}")
                 raise RuntimeError(f"Failed to generate text: {str(e)}")
@@ -217,7 +256,12 @@ class LLMProvider:
                     temperature=temperature,
                     max_tokens=max_tokens
                 )
-                return response.content[0].text
+                return GenerationResult(
+                    content=response.content[0].text,
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                    model=self.model
+                )
             except Exception as e:
                 logger.error(f"Anthropic generation failed: {e}")
                 raise RuntimeError(f"Failed to generate text: {str(e)}")
