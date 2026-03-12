@@ -287,6 +287,241 @@ GET /api/v1/rulebooks/published/affidavit/Gauteng%20High%20Court
 ```
 Returns the latest published rulebook for that document type and jurisdiction.
 
+## Admin API (ADMIN Role Required)
+
+All admin endpoints require the current user to have the ADMIN role in at least one organisation. These endpoints are for system administration and user/organisation management.
+
+### 7. Admin - User Management
+
+Comprehensive user administration with organisation membership management.
+
+| Method | Endpoint | Description | Response |
+|--------|----------|-------------|----------|
+| GET | `/admin/users/` | List all users with pagination | 200, AdminUserListResponse |
+| GET | `/admin/users/{user_id}` | Get user by ID with org memberships | 200, AdminUserResponse |
+| POST | `/admin/users/` | Create new user | 201, AdminUserResponse |
+| PATCH | `/admin/users/{user_id}` | Update user (email, password, name) | 200, AdminUserResponse |
+| DELETE | `/admin/users/{user_id}` | Delete user (CASCADE WARNING) | 204 No Content |
+
+**Query Parameters (GET /admin/users/):**
+- `q`: Search by email or full name (case-insensitive)
+- `page`: Page number (default: 1)
+- `per_page`: Items per page (default: 20, max: 100)
+- `sort`: Sort field (default: created_at)
+- `order`: Sort order (asc/desc, default: desc)
+
+**Create User Schema:**
+```json
+{
+  "email": "advocate@example.com",
+  "password": "secure_password_123",
+  "full_name": "John Smith"
+}
+```
+
+**Update User Schema (all fields optional):**
+```json
+{
+  "email": "newemail@example.com",
+  "password": "new_password",
+  "full_name": "John Q. Smith"
+}
+```
+
+**Admin User Response:**
+```json
+{
+  "id": 123,
+  "email": "advocate@example.com",
+  "full_name": "John Smith",
+  "created_at": "2026-03-10T10:00:00Z",
+  "updated_at": "2026-03-12T14:30:00Z",
+  "organisations": [
+    {
+      "organisation_id": 1,
+      "organisation_name": "Smith & Associates",
+      "role": "admin",
+      "joined_at": "2026-03-10T10:05:00Z"
+    }
+  ]
+}
+```
+
+**Important Notes:**
+- DELETE cascades to all related data (cases, documents, draft sessions)
+- Users cannot delete themselves (returns 400 Bad Request)
+- Password is hashed before storage using bcrypt
+
+### 8. Admin - Organisation Management
+
+Organisation CRUD and member management with role assignment.
+
+| Method | Endpoint | Description | Response |
+|--------|----------|-------------|----------|
+| GET | `/admin/organisations/` | List organisations with pagination | 200, OrganisationListResponse |
+| GET | `/admin/organisations/{org_id}` | Get organisation by ID | 200, OrganisationResponse |
+| POST | `/admin/organisations/` | Create organisation | 201, OrganisationResponse |
+| PATCH | `/admin/organisations/{org_id}` | Update organisation | 200, OrganisationResponse |
+| GET | `/admin/organisations/{org_id}/members` | List organisation members | 200, OrganisationMembersListResponse |
+| POST | `/admin/organisations/{org_id}/members` | Add member to organisation | 201, OrganisationMemberResponse |
+| PATCH | `/admin/organisations/{org_id}/members/{user_id}` | Update member role | 200, OrganisationMemberResponse |
+| DELETE | `/admin/organisations/{org_id}/members/{user_id}` | Remove member | 204 No Content |
+
+**Query Parameters (GET /admin/organisations/):**
+- `is_active`: Filter by active status (true/false)
+- `page`, `per_page`, `sort`, `order`: Standard pagination
+
+**Query Parameters (GET /admin/organisations/{org_id}/members):**
+- `role`: Filter by role (admin/practitioner/staff)
+- `page`, `per_page`: Standard pagination
+
+**Create Organisation Schema:**
+```json
+{
+  "name": "Smith & Associates",
+  "contact_email": "info@smith.co.za",
+  "is_active": true
+}
+```
+
+**Add Member Schema:**
+```json
+{
+  "user_id": 123,
+  "role": "practitioner"
+}
+```
+
+**Update Member Role Schema:**
+```json
+{
+  "role": "admin"
+}
+```
+
+**Organisation Member Response:**
+```json
+{
+  "id": 456,
+  "user_id": 123,
+  "email": "advocate@example.com",
+  "full_name": "John Smith",
+  "role": "admin",
+  "joined_at": "2026-03-10T10:05:00Z"
+}
+```
+
+**Role Types:**
+- `admin` - Organisation administrator (can manage members, cases, settings)
+- `practitioner` - Legal practitioner (advocate/attorney)
+- `staff` - Staff member (limited access)
+
+### 9. Admin - Rulebook Management
+
+Rulebook lifecycle management (upload, publish, deprecate).
+
+| Method | Endpoint | Description | Response |
+|--------|----------|-------------|----------|
+| POST | `/admin/rulebooks/` | Upload new rulebook (DRAFT status) | 201, RulebookResponse |
+| PATCH | `/admin/rulebooks/{id}` | Update DRAFT rulebook | 200, RulebookResponse |
+| POST | `/admin/rulebooks/{id}/publish` | Publish DRAFT rulebook | 200, RulebookResponse |
+| POST | `/admin/rulebooks/{id}/deprecate` | Deprecate PUBLISHED rulebook | 200, RulebookResponse |
+
+**Upload Rulebook Schema:**
+```json
+{
+  "document_type": "affidavit",
+  "jurisdiction": "Gauteng High Court",
+  "version": "1.0.0",
+  "source_yaml": "intake_questions:\n  - name: deponent_name\n    type: text\n...",
+  "label": "Standard Affidavit Template"
+}
+```
+
+**Update Rulebook Schema (all fields optional):**
+```json
+{
+  "label": "Updated Label",
+  "source_yaml": "intake_questions:\n  - name: deponent_name\n..."
+}
+```
+
+**Rulebook Lifecycle Rules:**
+1. **DRAFT** → Can be edited (PATCH) or published (POST /publish)
+2. **PUBLISHED** → Cannot be edited. Can only be deprecated (POST /deprecate)
+3. **DEPRECATED** → No actions allowed. Read-only for existing draft sessions
+4. To update a PUBLISHED rulebook, create a new version with incremented version number
+
+**Example Lifecycle:**
+```bash
+# 1. Upload as DRAFT
+POST /api/v1/admin/rulebooks/
+{
+  "document_type": "affidavit",
+  "jurisdiction": "Gauteng High Court",
+  "version": "1.0.0",
+  "source_yaml": "..."
+}
+# -> status: "draft"
+
+# 2. Edit while DRAFT (if needed)
+PATCH /api/v1/admin/rulebooks/5
+{
+  "label": "Updated label",
+  "source_yaml": "..."
+}
+
+# 3. Publish when ready
+POST /api/v1/admin/rulebooks/5/publish
+# -> status: "published"
+
+# 4. Later, deprecate old version
+POST /api/v1/admin/rulebooks/5/deprecate
+# -> status: "deprecated"
+
+# 5. Upload new version
+POST /api/v1/admin/rulebooks/
+{
+  "document_type": "affidavit",
+  "jurisdiction": "Gauteng High Court",
+  "version": "2.0.0",
+  "source_yaml": "..."
+}
+```
+
+### Admin RBAC Implementation
+
+**Middleware:** `require_admin()` dependency in `src/app/dependencies.py`
+
+**Authorization Check:**
+1. Verifies current user is authenticated (JWT token)
+2. Checks if user has ADMIN role in at least one organisation
+3. Returns 403 Forbidden if user lacks admin privileges
+
+**Example (curl with admin token):**
+```bash
+# Get admin token (user must have admin role)
+TOKEN=$(curl -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=admin@example.com&password=admin123" | jq -r '.access_token')
+
+# List all users (admin endpoint)
+curl -X GET http://localhost:8000/api/v1/admin/users/ \
+  -H "Authorization: Bearer $TOKEN"
+
+# Create new user
+curl -X POST http://localhost:8000/api/v1/admin/users/ \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "newuser@example.com", "password": "pass123", "full_name": "New User"}'
+```
+
+**Error Responses:**
+- `401 Unauthorized` - Missing or invalid JWT token
+- `403 Forbidden` - User lacks admin privileges
+- `404 Not Found` - User/organisation/rulebook not found
+- `409 Conflict` - Email already exists, or user already member of organisation
+
 ## Response Formats
 
 ### Success Response (Single Resource)
@@ -604,17 +839,19 @@ Phase 2 is complete. Remaining work:
 
 ## API Statistics
 
-- **Total Routes**: 39
-- **API v1 Endpoints**: 33
-- **Resource Types**: 7 (Auth, Organisations, Cases, Documents, UploadSessions, DraftSessions, Rulebooks)
-- **CRUD Resources**: 6 (Organisations, Cases, Documents, UploadSessions, DraftSessions, Rulebooks)
-- **Paginated Endpoints**: 6 (Cases, Documents, UploadSessions, DraftSessions, Rulebooks, Organisations)
-- **Filter Parameters**: 11 unique filters across resources
-- **Pydantic Schemas**: 20 schemas (Create, Update, Response, List types)
+- **Total Routes**: 54
+- **API v1 Endpoints**: 48
+- **Resource Types**: 10 (Auth, Organisations, Cases, Documents, UploadSessions, DraftSessions, Rulebooks, Admin Users, Admin Organisations, Admin Rulebooks)
+- **CRUD Resources**: 9
+- **Paginated Endpoints**: 9 (Cases, Documents, UploadSessions, DraftSessions, Rulebooks, Organisations, Admin Users, Admin Organisations, Admin Organisation Members)
+- **Filter Parameters**: 14 unique filters across resources
+- **Pydantic Schemas**: 30+ schemas (Create, Update, Response, List types)
+- **Admin Endpoints**: 15 (User management: 5, Organisation management: 8, Rulebook management: 3)
+- **RBAC Protected Routes**: 15 admin endpoints requiring ADMIN role
 
 ---
 
-**Generated**: 2026-03-11
+**Generated**: 2026-03-12
 **API Version**: 1.0.0
-**Phase**: 2.3 Complete
-**Status**: Ready for database testing and worker integration
+**Phase**: Admin System Complete
+**Status**: Backend complete with RBAC, frontend admin pages implemented, ready for testing
