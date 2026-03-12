@@ -60,7 +60,7 @@ def process_document_job(document_id: str):
         doc_repo.update_status(
             document_id=document_id,
             overall_status=DocumentStatusEnum.PROCESSING,
-            stage="initializing",
+            stage=None,  # Will be set to specific stage below
             stage_progress=0
         )
         db.commit()
