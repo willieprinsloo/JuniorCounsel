@@ -466,7 +466,7 @@ class TestEndToEndDraftingWorkflow:
             title="Test Founding Affidavit",
             document_type="affidavit",
             rulebook_id=affidavit_rulebook.id,
-            intake_answers=affidavit_intake_responses,
+            intake_responses=affidavit_intake_responses,
             status=DraftSessionStatusEnum.INITIALIZING,
             user_id=test_user.id
         )
@@ -510,11 +510,10 @@ class TestEndToEndDraftingWorkflow:
         # Verify draft updated
         db_session.refresh(draft)
         assert draft.research_summary is not None, "Research summary should be generated"
-        # research_summary is stored as Text (JSON string), parse it
-        research_data = json.loads(draft.research_summary) if isinstance(draft.research_summary, str) else draft.research_summary
-        assert "key_excerpts" in research_data, "Should have key_excerpts"
-        assert draft.status == DraftSessionStatusEnum.GENERATING, \
-            "Status should be generating after research completes"
+        # research_summary is now JSONB, use directly as dict
+        assert "key_excerpts" in draft.research_summary, "Should have key_excerpts"
+        assert draft.status == DraftSessionStatusEnum.DRAFTING, \
+            "Status should be drafting after research completes"
 
     @patch("app.workers.draft_generation.get_llm_provider")
     def test_draft_generation_with_rulebook(
@@ -557,9 +556,9 @@ class TestEndToEndDraftingWorkflow:
             title="Test Particulars of Claim",
             document_type="pleading",
             rulebook_id=pleading_rulebook.id,
-            intake_answers=pleading_intake_responses,
-            research_summary=json.dumps(research_summary),  # Store as JSON string
-            status=DraftSessionStatusEnum.GENERATING,
+            intake_responses=pleading_intake_responses,
+            research_summary=research_summary,  # Now JSONB, store as dict
+            status=DraftSessionStatusEnum.DRAFTING,
             user_id=test_user.id
         )
         db_session.add(draft)
@@ -592,10 +591,10 @@ WHEREFORE Plaintiff prays for judgment against Defendant for:
 
         # Verify draft updated
         db_session.refresh(draft)
-        # generated_content is stored in draft_doc JSONB field
+        # Draft doc should be generated and stored
         assert draft.draft_doc is not None, "Draft doc should be generated"
-        # For this test, the worker puts the content in a specific field - let's check the mock was called
-        # (We can't verify the actual generated content since it goes through the worker's processing)
+        assert draft.status == DraftSessionStatusEnum.REVIEW, \
+            "Status should be review after generation completes"
 
         # Verify LLM was called with rulebook configuration
         mock_llm.generate.assert_called_once()

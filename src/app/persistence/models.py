@@ -216,8 +216,10 @@ class DocumentChunk(Base):
 class DraftSessionStatusEnum(str, enum.Enum):
     INITIALIZING = "initializing"
     AWAITING_INTAKE = "awaiting_intake"
-    GENERATING = "generating"
-    READY = "ready"
+    RESEARCH = "research"  # Performing RAG research
+    DRAFTING = "drafting"  # LLM draft generation in progress
+    REVIEW = "review"  # Draft ready for user review
+    READY = "ready"  # Finalized and ready for export
     FAILED = "failed"
 
 
@@ -236,11 +238,11 @@ class DraftSession(Base):
 
     # Research phase outputs
     case_profile: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    research_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    research_summary: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)  # Changed from Text to JSONB
     outline: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
-    # Intake answers
-    intake_answers: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # Intake responses (renamed from intake_answers for consistency with worker code)
+    intake_responses: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Generated DraftDoc
     draft_doc: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
