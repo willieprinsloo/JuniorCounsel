@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from app.core.ai_providers import get_llm_provider
 from app.dependencies import get_current_user
 from app.middleware.database import get_db
-from app.persistence.models import User
+from app.persistence.models import User, TokenUsageTypeEnum, Case
+from app.persistence.repositories import TokenUsageRepository, CaseRepository
 from app.schemas.qa import QARequest, QAResponse, Citation
 from app.api.v1.search import search_documents
 
@@ -103,14 +104,34 @@ Question: {qa_request.question}
 
 Answer (with citations):"""
 
-        answer = llm_provider.generate(
+        generation_result = llm_provider.generate(
             prompt=prompt,
             system_message=system_message,
             temperature=0.3,  # Low temperature for factual accuracy
             max_tokens=1000
         )
 
-        logger.info(f"Generated answer: {len(answer)} chars")
+        # Record token usage
+        case_repo = CaseRepository(db)
+        case = case_repo.get_by_id(qa_request.case_id)
+
+        if case:
+            token_repo = TokenUsageRepository(db)
+            token_repo.record_usage(
+                usage_type=TokenUsageTypeEnum.LLM_QA,
+                provider=llm_provider.provider,
+                model=generation_result.model,
+                input_tokens=generation_result.input_tokens,
+                output_tokens=generation_result.output_tokens,
+                organisation_id=case.organisation_id,
+                user_id=current_user.id,
+                case_id=qa_request.case_id,
+                resource_type="qa_session",
+                resource_id=None  # Could be chat_session_id if we have it
+            )
+            db.commit()
+
+        logger.info(f"Generated answer: {len(generation_result.content)} chars, used {generation_result.input_tokens + generation_result.output_tokens} tokens")
 
     except Exception as e:
         logger.error(f"Failed to generate answer: {e}")
@@ -121,7 +142,7 @@ Answer (with citations):"""
 
     return QAResponse(
         question=qa_request.question,
-        answer=answer,
+        answer=generation_result.content,
         citations=citations,
         context_used=len(search_results.results)
     )

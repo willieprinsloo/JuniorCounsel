@@ -20,9 +20,15 @@ from app.persistence.models import (
     DraftSessionStatusEnum,
     DocumentChunk,
     Document,
-    DocumentStatusEnum
+    DocumentStatusEnum,
+    TokenUsageTypeEnum
 )
-from app.persistence.repositories import DraftSessionRepository, RulebookRepository, CitationRepository
+from app.persistence.repositories import (
+    DraftSessionRepository,
+    RulebookRepository,
+    CitationRepository,
+    TokenUsageRepository
+)
 from app.services.rulebook import RulebookService
 
 logger = logging.getLogger(__name__)
@@ -78,17 +84,32 @@ def draft_research_job(draft_session_id: str):
         # Perform RAG searches
         all_excerpts = []
         embedding_provider = get_embedding_provider()
+        token_repo = TokenUsageRepository(db)
 
         for query in queries:
             try:
                 # Generate query embedding
-                query_embedding = embedding_provider.embed_text(query)
+                embedding_result = embedding_provider.embed_text(query)
+
+                # Record token usage for embedding
+                token_repo.record_usage(
+                    usage_type=TokenUsageTypeEnum.EMBEDDING,
+                    provider=embedding_provider.provider,
+                    model=embedding_result.model,
+                    input_tokens=embedding_result.input_tokens,
+                    output_tokens=0,  # Embeddings don't have output tokens
+                    organisation_id=draft.organisation_id,
+                    user_id=draft.created_by_id if hasattr(draft, 'created_by_id') else None,
+                    case_id=draft.case_id,
+                    resource_type="draft_session",
+                    resource_id=str(draft_session_id)
+                )
 
                 # Search document chunks using pgvector
                 stmt = select(
                     DocumentChunk,
                     Document,
-                    func.cosine_distance(DocumentChunk.embedding, query_embedding).label('distance')
+                    func.cosine_distance(DocumentChunk.embedding, embedding_result.embedding).label('distance')
                 ).join(
                     Document, DocumentChunk.document_id == Document.id
                 ).where(
@@ -227,14 +248,30 @@ def draft_generation_job(draft_session_id: str):
 
         # Generate draft with LLM
         llm_provider = get_llm_provider()
-        generated_content = llm_provider.generate(
+        generation_result = llm_provider.generate(
             prompt=prompt,
             system_message=get_system_message_for_document_type(draft.document_type, rulebook),
             temperature=temperature,
             max_tokens=max_tokens
         )
+        generated_content = generation_result.content
 
-        logger.info(f"[{draft_session_id}] Generated {len(generated_content)} chars")
+        # Record token usage for LLM generation
+        token_repo = TokenUsageRepository(db)
+        token_repo.record_usage(
+            usage_type=TokenUsageTypeEnum.LLM_GENERATION,
+            provider=llm_provider.provider,
+            model=generation_result.model,
+            input_tokens=generation_result.input_tokens,
+            output_tokens=generation_result.output_tokens,
+            organisation_id=draft.organisation_id,
+            user_id=draft.created_by_id if hasattr(draft, 'created_by_id') else None,
+            case_id=draft.case_id,
+            resource_type="draft_session",
+            resource_id=str(draft_session_id)
+        )
+
+        logger.info(f"[{draft_session_id}] Generated {len(generated_content)} chars, used {generation_result.input_tokens + generation_result.output_tokens} tokens")
 
         # Extract citations from generated content
         citations_list = extract_citations_from_content(generated_content, draft.research_summary)

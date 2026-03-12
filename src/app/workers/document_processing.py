@@ -16,8 +16,8 @@ from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal
 from app.core.ai_providers import get_embedding_provider, get_llm_provider
-from app.persistence.models import DocumentStatusEnum, DocumentChunk
-from app.persistence.repositories import DocumentRepository
+from app.persistence.models import DocumentStatusEnum, DocumentChunk, TokenUsageTypeEnum
+from app.persistence.repositories import DocumentRepository, TokenUsageRepository
 from app.workers.ocr import perform_ocr
 from app.workers.text_extraction import extract_text
 from app.workers.chunking import chunk_text, extract_page_number
@@ -161,12 +161,27 @@ def process_document_job(document_id: str):
             chunk_texts = [chunk["content"] for chunk in chunks]
 
             # Generate embeddings in batches
-            embeddings = embedding_provider.embed_batch(chunk_texts, batch_size=100)
+            embeddings, total_tokens = embedding_provider.embed_batch(chunk_texts, batch_size=100)
 
             if len(embeddings) != len(chunks):
                 raise ValueError(f"Embedding count mismatch: {len(embeddings)} != {len(chunks)}")
 
-            logger.info(f"[{document_id}] Generated {len(embeddings)} embeddings")
+            # Record token usage for embeddings
+            token_repo = TokenUsageRepository(db)
+            token_repo.record_usage(
+                usage_type=TokenUsageTypeEnum.EMBEDDING,
+                provider=embedding_provider.provider,
+                model=embedding_provider.model,
+                input_tokens=total_tokens,
+                output_tokens=0,  # Embeddings don't have output tokens
+                organisation_id=document.organisation_id,
+                user_id=document.uploaded_by_id if hasattr(document, 'uploaded_by_id') else None,
+                case_id=document.case_id,
+                resource_type="document",
+                resource_id=str(document_id)
+            )
+
+            logger.info(f"[{document_id}] Generated {len(embeddings)} embeddings using {total_tokens} tokens")
 
         except Exception as e:
             logger.error(f"[{document_id}] Embedding generation failed: {e}")
@@ -224,7 +239,7 @@ def process_document_job(document_id: str):
         try:
             # Use LLM to suggest document type based on content
             if chunks and len(chunks[0]["content"]) > 100:
-                suggested_type = classify_document_content(chunks[0]["content"][:2000])
+                suggested_type = classify_document_content(chunks[0]["content"][:2000], document_id, db)
                 if suggested_type:
                     # Store as metadata (don't overwrite user's classification)
                     if not document.metadata:
@@ -274,12 +289,14 @@ def process_document_job(document_id: str):
             db.close()
 
 
-def classify_document_content(text_sample: str) -> Optional[str]:
+def classify_document_content(text_sample: str, document_id: str, db: Session) -> Optional[str]:
     """
-    Classify document type using LLM.
+    Classify document type using LLM with token usage tracking.
 
     Args:
         text_sample: First ~2000 chars of document
+        document_id: Document ID for token attribution
+        db: Database session for recording usage
 
     Returns:
         Suggested document type or None if classification fails
@@ -303,15 +320,33 @@ Classify as one of:
 
 Respond with just the category name, nothing else."""
 
-        response = llm_provider.generate(
+        generation_result = llm_provider.generate(
             prompt=prompt,
             system_message="You are a legal document classification assistant. Respond with only the category name.",
             temperature=0.3,  # Low temperature for consistent classification
             max_tokens=50
         )
 
+        # Record token usage
+        doc_repo = DocumentRepository(db)
+        document = doc_repo.get_by_id(document_id)
+        if document:
+            token_repo = TokenUsageRepository(db)
+            token_repo.record_usage(
+                usage_type=TokenUsageTypeEnum.LLM_GENERATION,
+                provider=llm_provider.provider,
+                model=generation_result.model,
+                input_tokens=generation_result.input_tokens,
+                output_tokens=generation_result.output_tokens,
+                organisation_id=document.organisation_id,
+                user_id=document.uploaded_by_id if hasattr(document, 'uploaded_by_id') else None,
+                case_id=document.case_id,
+                resource_type="document",
+                resource_id=str(document_id)
+            )
+
         # Extract category from response
-        category = response.strip().lower()
+        category = generation_result.content.strip().lower()
         valid_categories = ["pleading", "affidavit", "correspondence", "contract", "evidence", "court_order", "other"]
 
         if category in valid_categories:
