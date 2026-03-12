@@ -23,6 +23,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    redirect_slashes=False,  # Prevent redirects that break CORS
 )
 
 # CORS middleware
@@ -83,6 +84,7 @@ from app.api.v1 import (
     rulebooks,
     search,
     qa,
+    chat_sessions,
     usage,
 )
 
@@ -95,4 +97,5 @@ app.include_router(draft_sessions.router, prefix="/api/v1/draft-sessions", tags=
 app.include_router(rulebooks.router, prefix="/api/v1/rulebooks", tags=["rulebooks"])
 app.include_router(search.router, prefix="/api/v1/search", tags=["search"])
 app.include_router(qa.router, prefix="/api/v1/qa", tags=["qa"])
+app.include_router(chat_sessions.router, prefix="/api/v1/chat-sessions", tags=["chat-sessions"])
 app.include_router(usage.router, prefix="/api/v1/usage", tags=["usage"])

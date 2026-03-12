@@ -133,6 +133,7 @@ class Document(Base):
     __tablename__ = "documents"
     __table_args__ = (
         UniqueConstraint("case_id", "filename", name="uq_case_document"),
+        Index("idx_document_case_type_status", "case_id", "document_type", "overall_status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid4)
