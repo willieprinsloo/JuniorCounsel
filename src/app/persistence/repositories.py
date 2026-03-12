@@ -16,11 +16,13 @@ from .models import (
     CaseStatusEnum,
     Document,
     DocumentStatusEnum,
+    DocumentChunk,
     UploadSession,
     DraftSession,
     DraftSessionStatusEnum,
     Rulebook,
     RulebookStatusEnum,
+    Citation,
 )
 
 
@@ -609,3 +611,155 @@ class RulebookRepository:
             rulebook.status = status
             self.session.flush()
         return rulebook
+
+
+class CitationRepository:
+    """Repository for Citation entities."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def create(
+        self,
+        draft_session_id: str,
+        document_chunk_id: str,
+        marker: str,
+        citation_text: str,
+        page_number: Optional[int] = None,
+        paragraph_number: Optional[int] = None,
+        similarity_score: Optional[float] = None,
+        position_start: Optional[int] = None,
+        position_end: Optional[int] = None,
+    ) -> Citation:
+        """Create a new citation linking a draft session to a document chunk."""
+        citation = Citation(
+            draft_session_id=draft_session_id,
+            document_chunk_id=document_chunk_id,
+            marker=marker,
+            citation_text=citation_text,
+            page_number=page_number,
+            paragraph_number=paragraph_number,
+            similarity_score=similarity_score,
+            position_start=position_start,
+            position_end=position_end,
+        )
+        self.session.add(citation)
+        self.session.flush()
+        return citation
+
+    def get_by_id(self, citation_id: str) -> Optional[Citation]:
+        """Get citation by ID."""
+        return self.session.get(Citation, citation_id)
+
+    def list_by_draft_session(
+        self,
+        draft_session_id: str,
+        order_by_marker: bool = True,
+    ) -> list[Citation]:
+        """
+        Get all citations for a draft session.
+
+        Args:
+            draft_session_id: Draft session ID
+            order_by_marker: If True, order by marker (e.g., [1], [2], [3])
+
+        Returns:
+            List of citations
+        """
+        stmt = select(Citation).where(Citation.draft_session_id == draft_session_id)
+
+        if order_by_marker:
+            stmt = stmt.order_by(Citation.marker)
+        else:
+            stmt = stmt.order_by(Citation.created_at)
+
+        return list(self.session.execute(stmt).scalars().all())
+
+    def bulk_create(
+        self,
+        draft_session_id: str,
+        citation_data: list[dict],
+    ) -> list[Citation]:
+        """
+        Bulk create citations for a draft session.
+
+        Args:
+            draft_session_id: Draft session ID
+            citation_data: List of dicts with citation fields
+
+        Returns:
+            List of created citations
+        """
+        citations = []
+        for data in citation_data:
+            citation = Citation(
+                draft_session_id=draft_session_id,
+                document_chunk_id=data["document_chunk_id"],
+                marker=data["marker"],
+                citation_text=data["citation_text"],
+                page_number=data.get("page_number"),
+                paragraph_number=data.get("paragraph_number"),
+                similarity_score=data.get("similarity_score"),
+                position_start=data.get("position_start"),
+                position_end=data.get("position_end"),
+            )
+            citations.append(citation)
+            self.session.add(citation)
+
+        self.session.flush()
+        return citations
+
+    def delete_by_draft_session(self, draft_session_id: str) -> int:
+        """
+        Delete all citations for a draft session.
+
+        Returns:
+            Number of citations deleted
+        """
+        stmt = select(Citation).where(Citation.draft_session_id == draft_session_id)
+        citations = list(self.session.execute(stmt).scalars().all())
+
+        count = len(citations)
+        for citation in citations:
+            self.session.delete(citation)
+
+        self.session.flush()
+        return count
+
+    def get_with_document_info(self, draft_session_id: str) -> list[dict]:
+        """
+        Get citations with related document information (for API responses).
+
+        Returns list of dicts with citation + document chunk + document metadata.
+        """
+        from sqlalchemy.orm import joinedload
+
+        stmt = (
+            select(Citation)
+            .where(Citation.draft_session_id == draft_session_id)
+            .options(
+                joinedload(Citation.document_chunk).joinedload(DocumentChunk.document)
+            )
+            .order_by(Citation.marker)
+        )
+
+        citations = list(self.session.execute(stmt).unique().scalars().all())
+
+        result = []
+        for citation in citations:
+            chunk = citation.document_chunk
+            document = chunk.document if chunk else None
+
+            result.append({
+                "citation_id": str(citation.id),
+                "marker": citation.marker,
+                "citation_text": citation.citation_text,
+                "page_number": citation.page_number,
+                "paragraph_number": citation.paragraph_number,
+                "similarity_score": citation.similarity_score,
+                "document_id": str(document.id) if document else None,
+                "document_filename": document.filename if document else None,
+                "chunk_id": str(chunk.id) if chunk else None,
+            })
+
+        return result

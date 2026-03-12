@@ -287,3 +287,31 @@ class Rulebook(Base):
     created_by: Mapped[User] = relationship()
 
 
+class Citation(Base):
+    __tablename__ = "citations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid4)
+    draft_session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("draft_sessions.id", ondelete="CASCADE"), index=True
+    )
+    document_chunk_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("document_chunks.id", ondelete="CASCADE"), index=True
+    )
+
+    # Citation metadata
+    marker: Mapped[str] = mapped_column(String(16))  # e.g., "[1]", "[2]"
+    citation_text: Mapped[str] = mapped_column(Text)  # Excerpt from source document
+    page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    paragraph_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    similarity_score: Mapped[Optional[float]] = mapped_column(nullable=True)  # RAG similarity (0-1)
+
+    # Position in generated document (for inline citations)
+    position_start: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # Character offset
+    position_end: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    draft_session: Mapped[DraftSession] = relationship()
+    document_chunk: Mapped[DocumentChunk] = relationship()
+
+
