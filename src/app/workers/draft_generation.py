@@ -23,6 +23,7 @@ from app.persistence.models import (
     DocumentStatusEnum
 )
 from app.persistence.repositories import DraftSessionRepository, RulebookRepository
+from app.services.rulebook import RulebookService
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +66,13 @@ def draft_research_job(draft_session_id: str):
         db.flush()
         db.commit()
 
-        # Extract search queries from intake responses
-        queries = extract_search_queries(draft.intake_responses, rulebook.rules_json)
+        # Extract search queries using RulebookService
+        rulebook_service = RulebookService(db)
+        queries = extract_search_queries(
+            draft.intake_responses,
+            rulebook,
+            rulebook_service
+        )
         logger.info(f"[{draft_session_id}] Extracted {len(queries)} search queries")
 
         # Perform RAG searches
@@ -214,13 +220,18 @@ def draft_generation_job(draft_session_id: str):
             document_type=draft.document_type
         )
 
+        # Get LLM configuration from rulebook
+        drafting_config = rulebook.rules_json.get("drafting_prompt", {})
+        temperature = drafting_config.get("temperature", 0.5)
+        max_tokens = drafting_config.get("max_tokens", 4000)
+
         # Generate draft with LLM
         llm_provider = get_llm_provider()
         generated_content = llm_provider.generate(
             prompt=prompt,
-            system_message=get_system_message_for_document_type(draft.document_type),
-            temperature=0.5,  # Moderate creativity
-            max_tokens=4000
+            system_message=get_system_message_for_document_type(draft.document_type, rulebook),
+            temperature=temperature,
+            max_tokens=max_tokens
         )
 
         logger.info(f"[{draft_session_id}] Generated {len(generated_content)} chars")
@@ -267,20 +278,37 @@ def draft_generation_job(draft_session_id: str):
             db.close()
 
 
-def extract_search_queries(intake_responses: Dict[str, Any], rulebook_rules: Dict[str, Any]) -> List[str]:
+def extract_search_queries(
+    intake_responses: Dict[str, Any],
+    rulebook: Any,
+    rulebook_service: RulebookService
+) -> List[str]:
     """
-    Generate search queries from intake responses.
+    Generate search queries from intake responses and rulebook templates.
+
+    Uses RulebookService to:
+    1. Get research query templates from rulebook
+    2. Substitute {placeholders} with intake answers
+    3. Add meaningful text from intake responses
 
     Args:
         intake_responses: User's answers to intake questions
-        rulebook_rules: Rulebook configuration
+        rulebook: Rulebook model with rules_json
+        rulebook_service: RulebookService instance for template substitution
 
     Returns:
         List of search queries
     """
     queries = []
 
-    # Extract key facts/issues from intake
+    # Get research queries from rulebook with template substitution
+    rulebook_queries = rulebook_service.get_research_queries(
+        rulebook.id,
+        intake_responses
+    )
+    queries.extend(rulebook_queries)
+
+    # Extract key facts/issues from intake as additional queries
     for key, value in intake_responses.items():
         if isinstance(value, str) and len(value) > 20:
             # Use meaningful text as search query
@@ -289,10 +317,6 @@ def extract_search_queries(intake_responses: Dict[str, Any], rulebook_rules: Dic
             for item in value:
                 if isinstance(item, str) and len(item) > 20:
                     queries.append(item[:500])
-
-    # Add rulebook-specific queries if defined
-    if rulebook_rules and "research_queries" in rulebook_rules:
-        queries.extend(rulebook_rules["research_queries"][:5])
 
     # Limit to 10 queries max
     return queries[:10]
@@ -305,10 +329,15 @@ def build_drafting_prompt(
     document_type: str
 ) -> str:
     """
-    Build LLM prompt for draft generation.
+    Build LLM prompt for draft generation using rulebook templates.
+
+    Uses rulebook's:
+    - document_structure: Section titles, descriptions, prompt_guidance
+    - drafting_prompt.style_guidance: Style instructions
+    - Custom fields and templates
 
     Args:
-        rulebook: Rulebook with document structure
+        rulebook: Rulebook with rules_json containing templates
         intake_responses: User's intake answers
         research_summary: RAG research results
         document_type: Type of document to generate
@@ -322,82 +351,166 @@ def build_drafting_prompt(
     structure = rules.get("document_structure", [])
     structure_text = format_document_structure(structure)
 
-    # Format intake responses
-    intake_text = "\n".join([f"- {k}: {v}" for k, v in intake_responses.items()])
+    # Extract style guidance from drafting_prompt
+    drafting_config = rules.get("drafting_prompt", {})
+    style_guidance = drafting_config.get("style_guidance", "")
+
+    # Format intake responses in readable format
+    intake_lines = []
+    for k, v in intake_responses.items():
+        if isinstance(v, (list, dict)):
+            intake_lines.append(f"- {k}: {str(v)[:200]}")
+        else:
+            intake_lines.append(f"- {k}: {v}")
+    intake_text = "\n".join(intake_lines)
 
     # Format research excerpts with citations
-    excerpts = research_summary.get("key_excerpts", [])[:10]
+    excerpts = research_summary.get("key_excerpts", [])[:20]  # Use up to 20 excerpts
     excerpts_text = ""
     for i, excerpt in enumerate(excerpts):
-        excerpts_text += f"[{i+1}] {excerpt['content'][:500]}\n(Source: {excerpt['document']}, Page {excerpt['page']})\n\n"
+        content = excerpt['content'][:500]  # Limit excerpt length
+        doc_name = excerpt['document']
+        page = excerpt.get('page', 'N/A')
+        excerpts_text += f"[{i+1}] {content}\n    (Source: {doc_name}, Page {page})\n\n"
 
-    prompt = f"""You are drafting a {document_type} for South African litigation.
+    # Build comprehensive prompt
+    prompt = f"""You are drafting a {document_type} for South African High Court proceedings.
 
-**Document Structure (from rulebook):**
+**DOCUMENT STRUCTURE (Required Sections):**
 {structure_text}
 
-**Facts and Information (from intake):**
+**CASE INFORMATION (From intake questions):**
 {intake_text}
 
-**Supporting Evidence (from case documents):**
+**SUPPORTING EVIDENCE (From case documents - cite using [N] format):**
 {excerpts_text}
 
-**Instructions:**
-1. Follow the document structure exactly
-2. Use formal legal language appropriate for South African courts
-3. Cite evidence using [1], [2], etc. format
-4. Include all required sections from the structure
-5. Ensure factual accuracy (cite sources for all factual claims)
-6. Make it court-ready and professional
-7. Use South African legal terminology
+**STYLE AND FORMATTING REQUIREMENTS:**
+{style_guidance}
 
-Generate the {document_type}:"""
+**INSTRUCTIONS:**
+1. Follow the document structure exactly - include all required sections in order
+2. Each section should have:
+   - A heading in CAPITALS
+   - Numbered paragraphs (1., 2., 3., etc.)
+   - Content that fulfills the section's purpose
+3. Use formal legal register appropriate for South African High Court
+4. Cite supporting evidence using [1], [2], etc. format wherever you make factual claims
+5. Reference intake information to personalize the draft (parties, dates, case details)
+6. Ensure the document is court-ready and professional
+7. Use South African legal terminology consistently (e.g., "the Applicant", "the Respondent", "I aver that...")
+
+Generate the complete {document_type} now:"""
 
     return prompt
 
 
-def get_system_message_for_document_type(document_type: str) -> str:
-    """Get system message based on document type."""
-    messages = {
+def get_system_message_for_document_type(document_type: str, rulebook: Optional[Any] = None) -> str:
+    """
+    Get system message based on document type and rulebook.
+
+    If rulebook has custom system_message in drafting_prompt, use that.
+    Otherwise, use default system message for document type.
+
+    Args:
+        document_type: Type of document (affidavit, pleading, heads_of_argument)
+        rulebook: Optional Rulebook with rules_json containing drafting_prompt.system_message
+
+    Returns:
+        System message for LLM
+    """
+    # Try to get system message from rulebook first
+    if rulebook and rulebook.rules_json:
+        drafting_config = rulebook.rules_json.get("drafting_prompt", {})
+        custom_system_message = drafting_config.get("system_message")
+        if custom_system_message:
+            return custom_system_message
+
+    # Fallback to default system messages
+    default_messages = {
         "affidavit": """You are an expert South African litigation attorney specializing in affidavits.
-You draft clear, precise affidavits that comply with High Court rules.
-You cite evidence meticulously and use proper legal terminology.""",
+You draft clear, precise affidavits that comply with High Court rules and Uniform Rules of Court.
+You cite evidence meticulously using [N] format and use proper South African legal terminology.
+You structure affidavits with numbered paragraphs and clear section headings in CAPITALS.""",
 
         "pleading": """You are an expert South African litigation attorney specializing in pleadings.
-You draft well-structured pleadings (particulars of claim, pleas, replications) following court rules.
-You cite legal precedent and factual evidence accurately.""",
+You draft well-structured pleadings (particulars of claim, pleas, replications) following High Court practice.
+You cite legal precedent and factual evidence accurately using [N] format.
+You plead material facts clearly and precisely with numbered paragraphs.""",
 
         "heads_of_argument": """You are an expert South African advocate specializing in heads of argument.
-You draft persuasive, well-researched heads with proper legal citations.
-You structure arguments logically with supporting case law and statutory references."""
+You draft persuasive, well-researched heads with proper legal citations and case law references.
+You structure arguments logically with supporting precedents and statutory references.
+You use formal legal language appropriate for appellate advocacy."""
     }
 
-    return messages.get(document_type, "You are an expert legal drafting assistant for South African courts.")
+    return default_messages.get(
+        document_type,
+        "You are an expert legal drafting assistant for South African High Court proceedings."
+    )
 
 
 def format_document_structure(structure: List[Dict[str, Any]]) -> str:
     """
-    Format document structure from rulebook into readable text.
+    Format document structure from rulebook into readable LLM prompt.
+
+    Includes:
+    - Section titles
+    - Content templates (if provided)
+    - Prompt guidance for each section
+    - Required vs optional sections
 
     Args:
-        structure: List of section definitions
+        structure: List of section definitions from rulebook
 
     Returns:
-        Formatted structure text
+        Formatted structure text for LLM prompt
     """
     if not structure:
         return "No specific structure provided - use standard format for document type"
 
     formatted = []
-    for section in structure:
-        if isinstance(section, dict):
-            name = section.get("name", "Section")
-            description = section.get("description", "")
-            formatted.append(f"- {name}: {description}")
-        elif isinstance(section, str):
-            formatted.append(f"- {section}")
+    for i, section in enumerate(structure, 1):
+        if not isinstance(section, dict):
+            continue
 
-    return "\n".join(formatted)
+        section_id = section.get("section_id", f"section_{i}")
+        title = section.get("title", "UNTITLED SECTION")
+        required = section.get("required", True)
+        content_template = section.get("content_template", "")
+        prompt_guidance = section.get("prompt_guidance", "")
+        min_paragraphs = section.get("minimum_paragraphs")
+        max_paragraphs = section.get("maximum_paragraphs")
+
+        # Build section description
+        section_text = f"{i}. {title} {'(REQUIRED)' if required else '(OPTIONAL)'}"
+
+        # Add paragraph requirements
+        if min_paragraphs or max_paragraphs:
+            requirements = []
+            if min_paragraphs:
+                requirements.append(f"at least {min_paragraphs} paragraphs")
+            if max_paragraphs:
+                requirements.append(f"at most {max_paragraphs} paragraphs")
+            section_text += f"\n   Requirements: {', '.join(requirements)}"
+
+        # Add content guidance
+        if prompt_guidance:
+            section_text += f"\n   Guidance: {prompt_guidance[:300]}"
+        elif content_template:
+            section_text += f"\n   Purpose: {content_template[:300]}"
+
+        formatted.append(section_text)
+
+        # Handle nested subsections
+        subsections = section.get("subsections", [])
+        if subsections:
+            for j, subsection in enumerate(subsections, 1):
+                if isinstance(subsection, dict):
+                    subtitle = subsection.get("title", "Subsection")
+                    formatted.append(f"   {i}.{j}. {subtitle}")
+
+    return "\n\n".join(formatted)
 
 
 def extract_citations_from_content(content: str, research_summary: Dict[str, Any]) -> List[Dict[str, Any]]:
