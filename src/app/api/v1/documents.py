@@ -349,7 +349,12 @@ def delete_document(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Delete a document.
+    Delete a document and all associated data.
+
+    This endpoint deletes:
+    - The document record from database
+    - All associated vector embeddings (DocumentChunks) via CASCADE
+    - The physical file from storage
 
     Requires authentication.
 
@@ -370,5 +375,78 @@ def delete_document(
             detail="Document not found"
         )
 
+    # Delete physical file if it exists
+    if document.file_path:
+        try:
+            storage.delete_file(document.file_path)
+        except Exception as e:
+            # Log error but continue with database deletion
+            # The file might already be gone or storage might be unavailable
+            pass
+
+    # Delete from database (chunks will be cascade deleted via foreign key)
     db.delete(document)
     db.flush()
+    db.commit()
+
+
+@router.post("/{document_id}/retry", response_model=DocumentResponse)
+def retry_document_processing(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Retry processing for a failed or stuck document.
+
+    Resets the document status to QUEUED and enqueues a new processing job.
+    Useful for documents that failed due to temporary issues (network, dependencies, etc.).
+
+    Args:
+        document_id: Document ID (UUID)
+        db: Database session
+        current_user: Current authenticated user
+
+    Returns:
+        Document object with reset status
+
+    Raises:
+        HTTPException: If document not found (404)
+
+    Example:
+        ```bash
+        curl -X POST http://localhost:8000/api/v1/documents/{id}/retry \
+          -H "Authorization: Bearer {token}"
+        ```
+    """
+    doc_repo = DocumentRepository(db)
+    document = doc_repo.get_by_id(document_id)
+
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+
+    # Reset status
+    document.overall_status = DocumentStatusEnum.QUEUED
+    document.stage = None
+    document.stage_progress = 0
+    document.error_message = None
+    db.flush()
+    db.commit()
+
+    # Enqueue processing job
+    try:
+        job_id = enqueue_document_processing(document.id)
+        db.commit()
+    except Exception as e:
+        document.error_message = f"Failed to enqueue job: {str(e)}"
+        db.flush()
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to enqueue processing job: {str(e)}"
+        )
+
+    return document
