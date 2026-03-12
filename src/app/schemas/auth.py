@@ -44,3 +44,41 @@ class UserResponse(BaseModel):
     full_name: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Schema for forgot password request."""
+
+    email: EmailStr
+
+
+class ForgotPasswordResponse(BaseModel):
+    """Schema for forgot password response."""
+
+    message: str
+
+
+class VerifyResetTokenRequest(BaseModel):
+    """Schema for verify reset token request."""
+
+    token: str
+
+
+class VerifyResetTokenResponse(BaseModel):
+    """Schema for verify reset token response."""
+
+    valid: bool
+    message: str
+
+
+class ResetPasswordRequest(BaseModel):
+    """Schema for reset password request."""
+
+    token: str
+    new_password: str
+
+
+class ResetPasswordResponse(BaseModel):
+    """Schema for reset password response."""
+
+    message: str

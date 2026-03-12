@@ -56,6 +56,31 @@ class User(Base):
     cases: Mapped[list["Case"]] = relationship(back_populates="owner")
 
 
+class PasswordResetToken(Base):
+    """
+    Password reset tokens for forgot password workflow.
+
+    Tokens are single-use and expire after 1 hour.
+    """
+    __tablename__ = "password_reset_tokens"
+    __table_args__ = (
+        Index("idx_password_reset_token", "token"),
+        Index("idx_password_reset_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+
+    # Token lifecycle
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    user: Mapped[User] = relationship()
+
+
 class OrganisationRoleEnum(str, enum.Enum):
     ADMIN = "admin"
     PRACTITIONER = "practitioner"

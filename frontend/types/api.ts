@@ -22,6 +22,33 @@ export interface User {
   updated_at: string;
 }
 
+// Password Reset types
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ForgotPasswordResponse {
+  message: string;
+}
+
+export interface VerifyResetTokenRequest {
+  token: string;
+}
+
+export interface VerifyResetTokenResponse {
+  valid: boolean;
+  message: string;
+}
+
+export interface ResetPasswordRequest {
+  token: string;
+  new_password: string;
+}
+
+export interface ResetPasswordResponse {
+  message: string;
+}
+
 // Organisation types
 export interface Organisation {
   id: number;

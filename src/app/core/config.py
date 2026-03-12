@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     # CORS (Phase 2 - FastAPI)
     CORS_ORIGINS: str = "http://localhost:3000"  # Comma-separated frontend URLs
 
+    # Frontend URL (for email links, password reset, etc.)
+    FRONTEND_URL: str = "http://localhost:3001"
+
     # Uvicorn (Development)
     RELOAD: bool = True  # Auto-reload on code changes
 

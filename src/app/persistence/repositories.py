@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from .models import (
     Organisation,
     User,
+    PasswordResetToken,
     OrganisationUser,
     OrganisationRoleEnum,
     Case,
@@ -415,6 +416,112 @@ class UserRepository:
             self.session.flush()
             return True
         return False
+
+
+class PasswordResetTokenRepository:
+    """Repository for PasswordResetToken entities."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def create(
+        self,
+        user_id: int,
+        token: str,
+        expires_at: "datetime",
+    ) -> PasswordResetToken:
+        """Create a new password reset token."""
+        from datetime import datetime
+
+        reset_token = PasswordResetToken(
+            user_id=user_id,
+            token=token,
+            expires_at=expires_at,
+        )
+        self.session.add(reset_token)
+        self.session.flush()
+        return reset_token
+
+    def get_by_token(self, token: str) -> Optional[PasswordResetToken]:
+        """Get password reset token by token string."""
+        stmt = select(PasswordResetToken).where(PasswordResetToken.token == token)
+        return self.session.execute(stmt).scalar_one_or_none()
+
+    def mark_as_used(self, token: str) -> Optional[PasswordResetToken]:
+        """Mark a token as used."""
+        from datetime import datetime
+
+        reset_token = self.get_by_token(token)
+        if reset_token:
+            reset_token.used = True
+            reset_token.used_at = datetime.utcnow()
+            self.session.flush()
+        return reset_token
+
+    def is_valid(self, token: str) -> bool:
+        """
+        Check if a token is valid (exists, not used, not expired).
+
+        Args:
+            token: Token string to validate
+
+        Returns:
+            True if valid, False otherwise
+        """
+        from datetime import datetime
+
+        reset_token = self.get_by_token(token)
+        if not reset_token:
+            return False
+
+        if reset_token.used:
+            return False
+
+        if datetime.utcnow() > reset_token.expires_at:
+            return False
+
+        return True
+
+    def delete_expired(self) -> int:
+        """
+        Delete all expired tokens.
+
+        Returns:
+            Number of tokens deleted
+        """
+        from datetime import datetime
+
+        stmt = select(PasswordResetToken).where(
+            PasswordResetToken.expires_at < datetime.utcnow()
+        )
+        tokens = list(self.session.execute(stmt).scalars().all())
+
+        count = len(tokens)
+        for token in tokens:
+            self.session.delete(token)
+
+        self.session.flush()
+        return count
+
+    def delete_by_user(self, user_id: int) -> int:
+        """
+        Delete all tokens for a specific user.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            Number of tokens deleted
+        """
+        stmt = select(PasswordResetToken).where(PasswordResetToken.user_id == user_id)
+        tokens = list(self.session.execute(stmt).scalars().all())
+
+        count = len(tokens)
+        for token in tokens:
+            self.session.delete(token)
+
+        self.session.flush()
+        return count
 
 
 class CaseRepository:

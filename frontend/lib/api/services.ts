@@ -9,6 +9,12 @@ import type {
   LoginRequest,
   LoginResponse,
   User,
+  ForgotPasswordRequest,
+  ForgotPasswordResponse,
+  VerifyResetTokenRequest,
+  VerifyResetTokenResponse,
+  ResetPasswordRequest,
+  ResetPasswordResponse,
   Case,
   CaseCreate,
   CaseListResponse,
@@ -66,6 +72,18 @@ export const authAPI = {
 
   logout: async (): Promise<void> => {
     apiClient.setAuthToken(null);
+  },
+
+  forgotPassword: async (data: ForgotPasswordRequest): Promise<ForgotPasswordResponse> => {
+    return apiClient.post<ForgotPasswordResponse>('/api/v1/auth/forgot-password', data);
+  },
+
+  verifyResetToken: async (data: VerifyResetTokenRequest): Promise<VerifyResetTokenResponse> => {
+    return apiClient.post<VerifyResetTokenResponse>('/api/v1/auth/verify-reset-token', data);
+  },
+
+  resetPassword: async (data: ResetPasswordRequest): Promise<ResetPasswordResponse> => {
+    return apiClient.post<ResetPasswordResponse>('/api/v1/auth/reset-password', data);
   },
 };
 
