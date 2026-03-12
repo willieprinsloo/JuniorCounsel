@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_current_user
 from app.middleware.database import get_db
 from app.persistence.models import User, DraftSessionStatusEnum
-from app.persistence.repositories import DraftSessionRepository
+from app.persistence.repositories import DraftSessionRepository, CitationRepository
 from app.schemas.draft_session import (
     DraftSessionCreate,
     DraftSessionUpdate,
@@ -385,22 +385,21 @@ def get_draft_citations(
                    f"Draft must be generated first."
         )
 
-    # Extract citations from draft_doc (stored during generation)
-    # Note: In Phase 4.4, this will query the Citation model instead
+    # Query citations from Citation model
+    citation_repo = CitationRepository(db)
+    citations_with_doc_info = citation_repo.get_with_document_info(draft_session_id)
+
+    # Convert to CitationResponse objects
     citations_data = []
-
-    if draft_session.draft_doc and "citations" in draft_session.draft_doc:
-        citations_raw = draft_session.draft_doc["citations"]
-
-        for citation in citations_raw:
-            citations_data.append(CitationResponse(
-                marker=citation.get("marker", ""),
-                content=citation.get("content", ""),
-                document_name=citation.get("document", ""),
-                document_id=citation.get("document_id", ""),
-                page=citation.get("page"),
-                similarity=citation.get("similarity")
-            ))
+    for citation_dict in citations_with_doc_info:
+        citations_data.append(CitationResponse(
+            marker=citation_dict["marker"],
+            content=citation_dict["citation_text"],
+            document_name=citation_dict["document_filename"] or "Unknown",
+            document_id=citation_dict["document_id"] or "",
+            page=citation_dict["page_number"],
+            similarity=citation_dict["similarity_score"]
+        ))
 
     return CitationsListResponse(
         draft_session_id=draft_session_id,

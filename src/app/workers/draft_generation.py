@@ -22,7 +22,7 @@ from app.persistence.models import (
     Document,
     DocumentStatusEnum
 )
-from app.persistence.repositories import DraftSessionRepository, RulebookRepository
+from app.persistence.repositories import DraftSessionRepository, RulebookRepository, CitationRepository
 from app.services.rulebook import RulebookService
 
 logger = logging.getLogger(__name__)
@@ -103,11 +103,11 @@ def draft_research_job(draft_session_id: str):
                     if similarity >= 0.7:  # Similarity threshold
                         all_excerpts.append({
                             "query": query,
-                            "content": chunk.content,
+                            "content": chunk.text_content,
                             "document": document.filename,
                             "document_id": str(document.id),
+                            "chunk_id": str(chunk.id),  # Store chunk ID directly
                             "page": chunk.page_number,
-                            "chunk_index": chunk.chunk_index,
                             "similarity": round(similarity, 4)
                         })
 
@@ -121,10 +121,10 @@ def draft_research_job(draft_session_id: str):
         seen_chunks = set()
 
         for excerpt in all_excerpts:
-            chunk_key = (excerpt["document_id"], excerpt["chunk_index"])
-            if chunk_key not in seen_chunks:
+            chunk_id = excerpt["chunk_id"]
+            if chunk_id not in seen_chunks:
                 unique_excerpts.append(excerpt)
-                seen_chunks.add(chunk_key)
+                seen_chunks.add(chunk_id)
                 if len(unique_excerpts) >= 20:  # Limit to top 20
                     break
 
@@ -237,21 +237,54 @@ def draft_generation_job(draft_session_id: str):
         logger.info(f"[{draft_session_id}] Generated {len(generated_content)} chars")
 
         # Extract citations from generated content
-        citations = extract_citations_from_content(generated_content, draft.research_summary)
+        citations_list = extract_citations_from_content(generated_content, draft.research_summary)
 
-        # Save draft
-        draft.generated_content = generated_content
-        draft.metadata = {
-            "citations": citations,
+        # Save draft document in JSONB
+        draft.draft_doc = {
+            "content": generated_content,
+            "citations": citations_list,
             "model_used": llm_provider.model,
             "generated_at": datetime.utcnow().isoformat(),
             "excerpt_count": len(draft.research_summary.get("key_excerpts", []))
         }
         draft.status = DraftSessionStatusEnum.REVIEW
         db.flush()
+
+        # Store citations in Citation model for proper relational integrity
+        citation_repo = CitationRepository(db)
+
+        # Delete any existing citations for this draft (in case regenerating)
+        citation_repo.delete_by_draft_session(draft_session_id)
+
+        # Create Citation records
+        citation_data = []
+        excerpts = draft.research_summary.get("key_excerpts", [])
+
+        for citation in citations_list:
+            marker = citation["marker"]
+            marker_num = int(marker.strip('[]'))
+            idx = marker_num - 1
+
+            if 0 <= idx < len(excerpts):
+                excerpt = excerpts[idx]
+                # Excerpt now has chunk_id directly from research
+                chunk_id = excerpt.get("chunk_id")
+
+                if chunk_id:
+                    citation_data.append({
+                        "document_chunk_id": chunk_id,
+                        "marker": marker,
+                        "citation_text": excerpt["content"][:500],  # Limit to 500 chars
+                        "page_number": excerpt.get("page"),
+                        "similarity_score": excerpt.get("similarity")
+                    })
+
+        if citation_data:
+            citation_repo.bulk_create(draft_session_id, citation_data)
+
         db.commit()
 
-        logger.info(f"[{draft_session_id}] Generation completed: {len(citations)} citations")
+        logger.info(f"[{draft_session_id}] Generation completed: {len(citations_list)} citations stored")
 
         # TODO: Emit event for notification
         # emit_event('draft.ready', draft_session_id=draft_session_id)
