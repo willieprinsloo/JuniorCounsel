@@ -25,6 +25,9 @@ from .models import (
     Citation,
 )
 
+# Import TokenUsageRepository  from its own file
+from .token_usage_repository import TokenUsageRepository
+
 
 class OrganisationRepository:
     """Repository for Organisation entities."""
