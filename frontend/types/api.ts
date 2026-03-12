@@ -236,3 +236,79 @@ export interface QAResponse {
   sources: SearchResult[];
   confidence: number;
 }
+
+// Chat Session types
+export interface ChatSession {
+  id: string;
+  case_id: string;
+  user_id: number;
+  title: string | null;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  chat_session_id: string;
+  question: string;
+  answer: string;
+  confidence: number;
+  sources: SearchResult[] | null;
+  created_at: string;
+}
+
+export interface ChatSessionDetail {
+  id: string;
+  case_id: string;
+  user_id: number;
+  title: string | null;
+  messages: ChatMessage[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatSessionCreate {
+  case_id: string;
+  title?: string;
+}
+
+export interface ChatSessionListResponse {
+  data: ChatSession[];
+  page: number;
+  per_page: number;
+  total: number;
+  next_page: number | null;
+}
+
+// Token Usage types
+export interface UsageSummary {
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  request_count: number;
+}
+
+export interface UsageByTypeItem {
+  usage_type: string;
+  total_tokens: number;
+  total_cost_usd: number;
+  request_count: number;
+}
+
+export interface TopCaseItem {
+  case_id: string;
+  total_cost_usd: number;
+  total_tokens: number;
+}
+
+export interface UsageDashboard {
+  summary: UsageSummary;
+  by_type: UsageByTypeItem[];
+  top_cases: TopCaseItem[];
+  organisation_id: number | null;
+  user_id: number | null;
+  start_date: string;
+  end_date: string;
+}

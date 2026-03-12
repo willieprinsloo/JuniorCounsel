@@ -77,7 +77,7 @@ export const casesAPI = {
     page?: number;
     per_page?: number;
   }): Promise<CaseListResponse> => {
-    return apiClient.get<CaseListResponse>('/api/v1/cases', params);
+    return apiClient.get<CaseListResponse>('/api/v1/cases/', params);
   },
 
   get: async (caseId: string): Promise<Case> => {
@@ -85,7 +85,7 @@ export const casesAPI = {
   },
 
   create: async (data: CaseCreate & { organisation_id: number }): Promise<Case> => {
-    return apiClient.post<Case>('/api/v1/cases', data);
+    return apiClient.post<Case>('/api/v1/cases/', data);
   },
 
   update: async (caseId: string, data: Partial<CaseCreate>): Promise<Case> => {
@@ -106,7 +106,7 @@ export const documentsAPI = {
     page?: number;
     per_page?: number;
   }): Promise<DocumentListResponse> => {
-    return apiClient.get<DocumentListResponse>('/api/v1/documents', params);
+    return apiClient.get<DocumentListResponse>('/api/v1/documents/', params);
   },
 
   get: async (documentId: string): Promise<Document> => {
@@ -138,7 +138,7 @@ export const draftSessionsAPI = {
     page?: number;
     per_page?: number;
   }): Promise<DraftSessionListResponse> => {
-    return apiClient.get<DraftSessionListResponse>('/api/v1/draft-sessions', params);
+    return apiClient.get<DraftSessionListResponse>('/api/v1/draft-sessions/', params);
   },
 
   get: async (draftSessionId: string): Promise<DraftSession> => {
@@ -146,7 +146,7 @@ export const draftSessionsAPI = {
   },
 
   create: async (data: DraftSessionCreate): Promise<DraftSession> => {
-    return apiClient.post<DraftSession>('/api/v1/draft-sessions', data);
+    return apiClient.post<DraftSession>('/api/v1/draft-sessions/', data);
   },
 
   submitIntake: async (
@@ -186,7 +186,7 @@ export const rulebooksAPI = {
     page?: number;
     per_page?: number;
   }): Promise<RulebookListResponse> => {
-    return apiClient.get<RulebookListResponse>('/api/v1/rulebooks', params);
+    return apiClient.get<RulebookListResponse>('/api/v1/rulebooks/', params);
   },
 
   get: async (rulebookId: number): Promise<Rulebook> => {
@@ -204,13 +204,59 @@ export const rulebooksAPI = {
 // Search
 export const searchAPI = {
   search: async (request: SearchRequest): Promise<SearchResponse> => {
-    return apiClient.post<SearchResponse>('/api/v1/search', request);
+    return apiClient.post<SearchResponse>('/api/v1/search/', request);
   },
 };
 
 // Q&A
 export const qaAPI = {
-  ask: async (request: QARequest): Promise<QAResponse> => {
-    return apiClient.post<QAResponse>('/api/v1/qa', request);
+  ask: async (request: QARequest, chatSessionId?: string): Promise<QAResponse> => {
+    const url = chatSessionId
+      ? `/api/v1/qa/?chat_session_id=${chatSessionId}`
+      : '/api/v1/qa/';
+    return apiClient.post<QAResponse>(url, request);
+  },
+};
+
+// Chat Sessions
+import type { ChatSession, ChatSessionDetail, ChatSessionCreate, ChatSessionListResponse } from '@/types/api';
+
+export const chatSessionsAPI = {
+  create: async (data: ChatSessionCreate): Promise<ChatSession> => {
+    return apiClient.post<ChatSession>('/api/v1/chat-sessions/', data);
+  },
+
+  list: async (params: {
+    case_id: string;
+    page?: number;
+    per_page?: number;
+  }): Promise<ChatSessionListResponse> => {
+    return apiClient.get<ChatSessionListResponse>('/api/v1/chat-sessions/', params);
+  },
+
+  get: async (chatSessionId: string): Promise<ChatSessionDetail> => {
+    return apiClient.get<ChatSessionDetail>(`/api/v1/chat-sessions/${chatSessionId}`);
+  },
+
+  delete: async (chatSessionId: string): Promise<void> => {
+    return apiClient.delete<void>(`/api/v1/chat-sessions/${chatSessionId}`);
+  },
+};
+
+// Token Usage
+import type { UsageSummary, UsageDashboard } from '@/types/api';
+
+export const usageAPI = {
+  getDashboard: async (params?: {
+    organisation_id?: number;
+    user_id?: number;
+    start_date?: string;
+    end_date?: string;
+  }): Promise<UsageDashboard> => {
+    return apiClient.get<UsageDashboard>('/api/v1/usage/dashboard/', params);
+  },
+
+  getDocumentUsage: async (documentId: string): Promise<UsageSummary> => {
+    return apiClient.get<UsageSummary>(`/api/v1/usage/document/${documentId}`);
   },
 };
