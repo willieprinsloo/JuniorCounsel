@@ -107,21 +107,15 @@ async def upload_document_file(
         needs_ocr=needs_ocr
     )
 
-    # Store file path in metadata
-    document.metadata = {
-        "file_path": file_path,
-        "storage_url": storage_url,
-        "file_size_bytes": file_size,
-        "original_filename": file.filename
-    }
+    # Store file path and size in document model
+    document.file_path = file_path
+    document.file_size = file_size
     db.flush()
     db.commit()
 
     # Enqueue processing job (non-blocking)
     try:
         job_id = enqueue_document_processing(document.id)
-        # Store job ID in metadata for tracking
-        document.metadata["job_id"] = job_id
         db.flush()
         db.commit()
     except Exception as e:

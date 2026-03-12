@@ -50,11 +50,11 @@ def process_document_job(document_id: str):
 
         logger.info(f"Starting processing for document {document_id}: {document.filename}")
 
-        # Get file path from metadata
-        if not document.metadata or 'storage_url' not in document.metadata:
-            raise ValueError(f"Document {document_id} has no file path in metadata")
+        # Get file path from document
+        if not document.file_path:
+            raise ValueError(f"Document {document_id} has no file path")
 
-        file_path = document.metadata['storage_url']
+        file_path = document.file_path
 
         # Update status to processing
         doc_repo.update_status(
@@ -84,15 +84,8 @@ def process_document_job(document_id: str):
 
             logger.info(f"[{document_id}] Extracted {len(extracted_text)} characters")
 
-            # Store OCR confidence if available
-            if document.needs_ocr and document.metadata:
-                # OCR returns {"text": ..., "confidence": ..., "page_count": ...}
-                # But extract_text only returns text, so we'd need to call perform_ocr separately
-                # For now, just note that OCR was used
-                document.metadata['extraction_method'] = 'ocr'
-            else:
-                document.metadata['extraction_method'] = 'text'
-
+            # Store text content in document
+            document.text_content = extracted_text
             db.flush()
 
         except Exception as e:
@@ -174,7 +167,7 @@ def process_document_job(document_id: str):
                 model=embedding_provider.model,
                 input_tokens=total_tokens,
                 output_tokens=0,  # Embeddings don't have output tokens
-                organisation_id=document.organisation_id,
+                organisation_id=document.case.organisation_id if document.case else None,
                 user_id=document.uploaded_by_id if hasattr(document, 'uploaded_by_id') else None,
                 case_id=document.case_id,
                 resource_type="document",
@@ -241,10 +234,8 @@ def process_document_job(document_id: str):
             if chunks and len(chunks[0]["content"]) > 100:
                 suggested_type = classify_document_content(chunks[0]["content"][:2000], document_id, db)
                 if suggested_type:
-                    # Store as metadata (don't overwrite user's classification)
-                    if not document.metadata:
-                        document.metadata = {}
-                    document.metadata['suggested_type'] = suggested_type
+                    # Store in notes field for now (we don't have a metadata column)
+                    document.notes = f"AI suggested type: {suggested_type}"
                     db.flush()
                     logger.info(f"[{document_id}] Suggested type: {suggested_type}")
         except Exception as e:
@@ -255,7 +246,7 @@ def process_document_job(document_id: str):
         doc_repo.update_status(
             document_id=document_id,
             overall_status=DocumentStatusEnum.COMPLETED,
-            stage="completed",
+            stage=None,  # No "completed" stage in enum
             stage_progress=100
         )
         db.commit()
@@ -274,7 +265,7 @@ def process_document_job(document_id: str):
                 doc_repo.update_status(
                     document_id=document_id,
                     overall_status=DocumentStatusEnum.FAILED,
-                    stage="failed",
+                    stage=None,  # No "failed" stage in enum
                     stage_progress=0,
                     error_message=str(e)
                 )
@@ -338,7 +329,7 @@ Respond with just the category name, nothing else."""
                 model=generation_result.model,
                 input_tokens=generation_result.input_tokens,
                 output_tokens=generation_result.output_tokens,
-                organisation_id=document.organisation_id,
+                organisation_id=document.case.organisation_id if document.case else None,
                 user_id=document.uploaded_by_id if hasattr(document, 'uploaded_by_id') else None,
                 case_id=document.case_id,
                 resource_type="document",
