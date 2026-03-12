@@ -46,7 +46,7 @@ def test_organisation(db_session: Session):
     """Create test organisation."""
     org = Organisation(
         name="Test Legal Practice",
-        email="test@practice.co.za",
+        contact_email="test@practice.co.za",
         is_active=True
     )
     db_session.add(org)
@@ -58,15 +58,23 @@ def test_organisation(db_session: Session):
 @pytest.fixture
 def test_user(db_session: Session, test_organisation: Organisation):
     """Create test user."""
+    from app.persistence.models import OrganisationUser, OrganisationRoleEnum
+
     user = User(
         email="advocate@practice.co.za",
         password_hash="hashed_password",
-        first_name="Test",
-        last_name="Advocate",
-        organisation_id=test_organisation.id,
-        is_active=True
+        full_name="Test Advocate"
     )
     db_session.add(user)
+    db_session.flush()
+
+    # Link user to organisation
+    org_user = OrganisationUser(
+        organisation_id=test_organisation.id,
+        user_id=user.id,
+        role=OrganisationRoleEnum.PRACTITIONER
+    )
+    db_session.add(org_user)
     db_session.commit()
     db_session.refresh(user)
     return user
@@ -77,9 +85,8 @@ def test_case(db_session: Session, test_organisation: Organisation, test_user: U
     """Create test case with processed documents."""
     case = Case(
         title="Smith v Jones - Breach of Contract",
-        case_number="2025/54321",
         organisation_id=test_organisation.id,
-        created_by_id=test_user.id,
+        owner_id=test_user.id,
         description="Contract dispute case"
     )
     db_session.add(case)
@@ -169,13 +176,15 @@ def test_documents(db_session: Session, test_case: Case, mock_embedding_provider
 
 
 @pytest.fixture
-def test_rulebook(db_session: Session, test_organisation: Organisation):
+def test_rulebook(db_session: Session, test_user: User):
     """Create test rulebook for affidavits."""
     rulebook = Rulebook(
-        name="High Court Affidavit Standard",
         document_type="affidavit",
+        jurisdiction="south_africa_high_court",
         version="1.0",
-        organisation_id=test_organisation.id,
+        label="High Court Affidavit Standard",
+        created_by_id=test_user.id,
+        status="published",
         source_yaml="""
 document_type: affidavit
 structure:
@@ -200,8 +209,7 @@ structure:
                 "employment contract terms",
                 "termination provisions"
             ]
-        },
-        is_active=True
+        }
     )
     db_session.add(rulebook)
     db_session.commit()
@@ -219,11 +227,11 @@ def test_draft_session(
     """Create test draft session."""
     draft = DraftSession(
         case_id=test_case.id,
-        created_by_id=test_user.id,
+        user_id=test_user.id,
         rulebook_id=test_rulebook.id,
         document_type="affidavit",
         title="Affidavit in Support of Application",
-        status=DraftSessionStatusEnum.INTAKE,
+        status=DraftSessionStatusEnum.AWAITING_INTAKE,
         intake_responses={
             "deponent_name": "John Smith",
             "deponent_role": "Applicant",
@@ -340,8 +348,10 @@ class TestDraftResearchWorkflow:
         # Verify generation was auto-enqueued
         mock_enqueue.assert_called_once_with(str(test_draft_session.id))
 
-    def test_extract_search_queries(self):
+    def test_extract_search_queries(self, test_rulebook: "Rulebook", db_session: Session):
         """Test search query extraction from intake responses."""
+        from app.services.rulebook_service import RulebookService
+
         intake_responses = {
             "deponent_name": "John Smith",  # Short, won't be used
             "key_facts": "The contract was signed on 1 January 2024 and stipulated a monthly salary of R50,000.",
@@ -350,11 +360,8 @@ class TestDraftResearchWorkflow:
             "non_string": 123  # Not a string
         }
 
-        rulebook_rules = {
-            "research_queries": ["employment law precedents", "termination clause enforcement"]
-        }
-
-        queries = extract_search_queries(intake_responses, rulebook_rules)
+        rulebook_service = RulebookService(db_session)
+        queries = extract_search_queries(intake_responses, test_rulebook, rulebook_service)
 
         # Verify meaningful queries were extracted
         assert len(queries) > 0
@@ -364,7 +371,7 @@ class TestDraftResearchWorkflow:
         assert any("contract was signed" in q for q in queries)
 
         # Verify rulebook queries were added
-        assert "employment law precedents" in queries or "termination clause enforcement" in queries
+        assert "employment contract terms" in queries or "termination provisions" in queries
 
     def test_research_with_no_documents(
         self,
@@ -480,21 +487,20 @@ class TestDraftGenerationWorkflow:
         db_session.refresh(test_draft_session)
         assert test_draft_session.status == DraftSessionStatusEnum.REVIEW
 
+        # Verify draft_doc was generated
+        assert test_draft_session.draft_doc is not None
+        assert "content" in test_draft_session.draft_doc
+        assert "citations" in test_draft_session.draft_doc
+        assert "model_used" in test_draft_session.draft_doc
+        assert "generated_at" in test_draft_session.draft_doc
+
         # Verify content was generated
-        assert test_draft_session.generated_content is not None
-        assert len(test_draft_session.generated_content) > 0
-        assert "AFFIDAVIT" in test_draft_session.generated_content
-
-        # Verify metadata was saved
-        assert test_draft_session.metadata is not None
-        metadata = test_draft_session.metadata
-
-        assert "citations" in metadata
-        assert "model_used" in metadata
-        assert "generated_at" in metadata
+        generated_content = test_draft_session.draft_doc["content"]
+        assert len(generated_content) > 0
+        assert "AFFIDAVIT" in generated_content
 
         # Verify citations were extracted
-        citations = metadata["citations"]
+        citations = test_draft_session.draft_doc["citations"]
         assert len(citations) > 0
 
         # Verify citation structure
@@ -657,8 +663,8 @@ class TestEndToEndDraftWorkflow:
         mock_llm_provider
     ):
         """Test complete workflow from research through generation."""
-        # Start with intake status
-        assert test_draft_session.status == DraftSessionStatusEnum.INTAKE
+        # Start with awaiting_intake status
+        assert test_draft_session.status == DraftSessionStatusEnum.AWAITING_INTAKE
 
         # Step 1: Run research
         with patch('app.core.ai_providers.get_embedding_provider') as mock_get_embed:
@@ -680,6 +686,7 @@ class TestEndToEndDraftWorkflow:
         # Verify final state
         db_session.refresh(test_draft_session)
         assert test_draft_session.status == DraftSessionStatusEnum.REVIEW
-        assert test_draft_session.generated_content is not None
-        assert test_draft_session.metadata is not None
-        assert len(test_draft_session.metadata["citations"]) > 0
+        assert test_draft_session.draft_doc is not None
+        assert "content" in test_draft_session.draft_doc
+        assert "citations" in test_draft_session.draft_doc
+        assert len(test_draft_session.draft_doc["citations"]) > 0
