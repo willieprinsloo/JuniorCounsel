@@ -97,10 +97,43 @@ export default function UploadDocumentsPage() {
     <AppLayout>
       <div className="max-w-4xl mx-auto space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Upload Documents</h1>
-          <p className="mt-1 text-sm text-gray-600">
+          <h1 className="text-2xl font-bold text-foreground">Upload Documents</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Upload PDF documents to be processed and indexed for this case.
           </p>
+        </div>
+
+        {/* Background Processing Info */}
+        <div className="rounded-md bg-blue-50 dark:bg-blue-950/30 p-4 border border-blue-200 dark:border-blue-900">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg
+                className="h-5 w-5 text-blue-400"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </div>
+            <div className="ml-3 flex-1">
+              <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                Documents will be processed in the background
+              </h3>
+              <div className="mt-2 text-sm text-blue-700 dark:text-blue-300">
+                <p>
+                  After upload, your documents will be queued for processing (OCR, text extraction, and indexing).
+                  You can safely leave this page and return later - processing continues in the background.
+                </p>
+                <p className="mt-2">
+                  Check the Documents tab on the case page to monitor processing status. You'll see when each document is ready.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Drag and Drop Area */}
@@ -108,10 +141,10 @@ export default function UploadDocumentsPage() {
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
-          className={`relative border-2 border-dashed rounded-lg p-12 text-center ${
+          className={`relative border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
             isDragging
-              ? 'border-blue-500 bg-blue-50'
-              : 'border-gray-300 bg-white'
+              ? 'border-primary bg-primary/10'
+              : 'border-input bg-card'
           }`}
         >
           <input
@@ -125,7 +158,7 @@ export default function UploadDocumentsPage() {
           />
 
           <svg
-            className="mx-auto h-12 w-12 text-gray-400"
+            className="mx-auto h-12 w-12 text-muted-foreground"
             stroke="currentColor"
             fill="none"
             viewBox="0 0 48 48"
@@ -138,52 +171,52 @@ export default function UploadDocumentsPage() {
             />
           </svg>
 
-          <p className="mt-2 text-sm text-gray-600">
+          <p className="mt-2 text-sm text-muted-foreground">
             <label
               htmlFor="file-upload"
-              className="relative cursor-pointer rounded-md font-medium text-blue-600 hover:text-blue-500"
+              className="relative cursor-pointer rounded-md font-medium text-primary hover:text-primary/90 transition-colors"
             >
               Click to upload
             </label>
             {' or drag and drop'}
           </p>
-          <p className="mt-1 text-xs text-gray-500">PDF files only</p>
+          <p className="mt-1 text-xs text-muted-foreground">PDF files only</p>
         </div>
 
         {/* File List */}
         {files.length > 0 && (
-          <div className="bg-white shadow rounded-lg">
+          <div className="bg-card shadow rounded-lg border border-border">
             <div className="px-4 py-5 sm:p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">
+              <h3 className="text-lg font-medium text-foreground mb-4">
                 Selected Files ({files.length})
               </h3>
 
-              <ul className="divide-y divide-gray-200">
+              <ul className="divide-y divide-border">
                 {files.map((file, index) => (
                   <li key={index} className="py-3 flex items-center justify-between">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
+                      <p className="text-sm font-medium text-foreground truncate">
                         {file.name}
                       </p>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-sm text-muted-foreground">
                         {formatFileSize(file.size)}
                       </p>
 
                       {uploadProgress[file.name] !== undefined && (
                         <div className="mt-2">
                           {uploadProgress[file.name] === 100 ? (
-                            <span className="text-xs text-green-600">Uploaded</span>
+                            <span className="text-xs text-success">Uploaded</span>
                           ) : uploadProgress[file.name] > 0 ? (
-                            <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div className="w-full bg-muted rounded-full h-2">
                               <div
-                                className="bg-blue-600 h-2 rounded-full transition-all"
+                                className="bg-primary h-2 rounded-full transition-all"
                                 style={{ width: `${uploadProgress[file.name]}%` }}
                               />
                             </div>
                           ) : null}
 
                           {errors[file.name] && (
-                            <p className="text-xs text-red-600 mt-1">
+                            <p className="text-xs text-destructive mt-1">
                               {errors[file.name]}
                             </p>
                           )}
@@ -194,7 +227,7 @@ export default function UploadDocumentsPage() {
                     {!uploading && (
                       <button
                         onClick={() => removeFile(index)}
-                        className="ml-4 text-sm text-red-600 hover:text-red-800"
+                        className="ml-4 text-sm text-destructive hover:text-destructive/90 transition-colors"
                       >
                         Remove
                       </button>
@@ -207,14 +240,14 @@ export default function UploadDocumentsPage() {
                 <button
                   onClick={() => router.push(`/cases/${caseId}`)}
                   disabled={uploading}
-                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                  className="px-4 py-2 border border-border rounded-md text-sm font-medium text-card-foreground bg-card hover:bg-accent disabled:opacity-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={uploadFiles}
                   disabled={uploading || files.length === 0}
-                  className="px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                  className="px-4 py-2 border border-transparent rounded-md text-sm font-medium text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-50 transition-colors"
                 >
                   {uploading ? 'Uploading...' : `Upload ${files.length} file${files.length !== 1 ? 's' : ''}`}
                 </button>
@@ -225,14 +258,27 @@ export default function UploadDocumentsPage() {
 
         {/* Success Message */}
         {uploadedDocs.length > 0 && Object.keys(errors).length === 0 && (
-          <div className="rounded-md bg-green-50 p-4">
+          <div className="rounded-md bg-success/10 p-4 border border-success/20">
             <div className="flex">
+              <div className="flex-shrink-0">
+                <svg
+                  className="h-5 w-5 text-success"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </div>
               <div className="ml-3">
-                <p className="text-sm font-medium text-green-800">
+                <p className="text-sm font-medium text-success">
                   Successfully uploaded {uploadedDocs.length} document{uploadedDocs.length !== 1 ? 's' : ''}!
                 </p>
-                <p className="mt-1 text-sm text-green-700">
-                  Redirecting back to case...
+                <p className="mt-1 text-sm text-success">
+                  Your documents are now being processed in the background. You'll be redirected to the case page where you can monitor their progress.
                 </p>
               </div>
             </div>
