@@ -90,6 +90,170 @@ class OrganisationRepository:
             return True
         return False
 
+    def list(
+        self,
+        is_active: Optional[bool] = None,
+        page: int = 1,
+        per_page: int = 20,
+        sort: str = "name",
+        order: str = "asc",
+    ) -> Tuple[list[Organisation], int]:
+        """
+        List organisations with pagination and filtering.
+
+        Args:
+            is_active: Filter by active status (None = all)
+            page: Page number (1-indexed)
+            per_page: Items per page (max 100)
+            sort: Field to sort by
+            order: Sort order ('asc' or 'desc')
+
+        Returns:
+            Tuple of (organisations, total_count)
+        """
+        per_page = min(per_page, 100)
+
+        stmt = select(Organisation)
+
+        if is_active is not None:
+            stmt = stmt.where(Organisation.is_active == is_active)
+
+        # Count total
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = self.session.scalar(count_stmt) or 0
+
+        # Apply sorting
+        sort_column = getattr(Organisation, sort, Organisation.name)
+        direction = desc if order.lower() == "desc" else asc
+        stmt = stmt.order_by(direction(sort_column))
+
+        # Apply pagination
+        offset = (page - 1) * per_page
+        stmt = stmt.limit(per_page).offset(offset)
+
+        organisations = list(self.session.execute(stmt).scalars().all())
+
+        return organisations, total
+
+    def update(
+        self,
+        organisation_id: int,
+        name: Optional[str] = None,
+        contact_email: Optional[str] = None,
+        is_active: Optional[bool] = None,
+    ) -> Optional[Organisation]:
+        """Update organisation fields."""
+        from datetime import datetime
+
+        org = self.get_by_id(organisation_id)
+        if org:
+            if name is not None:
+                org.name = name
+            if contact_email is not None:
+                org.contact_email = contact_email
+            if is_active is not None:
+                org.is_active = is_active
+            org.updated_at = datetime.utcnow()
+            self.session.flush()
+        return org
+
+
+class OrganisationUserRepository:
+    """Repository for OrganisationUser (membership) entities."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def get_by_id(self, org_user_id: int) -> Optional[OrganisationUser]:
+        """Get organisation user membership by ID."""
+        return self.session.get(OrganisationUser, org_user_id)
+
+    def get_by_org_and_user(
+        self, organisation_id: int, user_id: int
+    ) -> Optional[OrganisationUser]:
+        """Get a specific user's membership in an organisation."""
+        stmt = select(OrganisationUser).where(
+            OrganisationUser.organisation_id == organisation_id,
+            OrganisationUser.user_id == user_id,
+        )
+        return self.session.execute(stmt).scalar_one_or_none()
+
+    def list_by_organisation(
+        self,
+        organisation_id: int,
+        role: Optional[OrganisationRoleEnum] = None,
+        page: int = 1,
+        per_page: int = 20,
+    ) -> Tuple[list[OrganisationUser], int]:
+        """
+        List members of an organisation with pagination.
+
+        Args:
+            organisation_id: Organisation ID
+            role: Filter by role (optional)
+            page: Page number (1-indexed)
+            per_page: Items per page (max 100)
+
+        Returns:
+            Tuple of (memberships, total_count)
+        """
+        from sqlalchemy.orm import joinedload
+
+        per_page = min(per_page, 100)
+
+        stmt = (
+            select(OrganisationUser)
+            .where(OrganisationUser.organisation_id == organisation_id)
+            .options(joinedload(OrganisationUser.user))
+        )
+
+        if role:
+            stmt = stmt.where(OrganisationUser.role == role)
+
+        # Count total
+        count_stmt = select(func.count()).select_from(
+            select(OrganisationUser)
+            .where(OrganisationUser.organisation_id == organisation_id)
+            .subquery()
+        )
+        if role:
+            count_stmt = select(func.count()).select_from(
+                select(OrganisationUser)
+                .where(
+                    OrganisationUser.organisation_id == organisation_id,
+                    OrganisationUser.role == role,
+                )
+                .subquery()
+            )
+        total = self.session.scalar(count_stmt) or 0
+
+        # Apply pagination
+        offset = (page - 1) * per_page
+        stmt = stmt.limit(per_page).offset(offset)
+
+        memberships = list(self.session.execute(stmt).unique().scalars().all())
+
+        return memberships, total
+
+    def update_role(
+        self, organisation_id: int, user_id: int, role: OrganisationRoleEnum
+    ) -> Optional[OrganisationUser]:
+        """Update a member's role in an organisation."""
+        org_user = self.get_by_org_and_user(organisation_id, user_id)
+        if org_user:
+            org_user.role = role
+            self.session.flush()
+        return org_user
+
+    def delete(self, org_user_id: int) -> bool:
+        """Remove a member from an organisation."""
+        org_user = self.get_by_id(org_user_id)
+        if org_user:
+            self.session.delete(org_user)
+            self.session.flush()
+            return True
+        return False
+
 
 class UserRepository:
     """Repository for User entities."""
@@ -126,6 +290,131 @@ class UserRepository:
         """List all users."""
         stmt = select(User).order_by(User.email)
         return list(self.session.execute(stmt).scalars().all())
+
+    def list(
+        self,
+        q: Optional[str] = None,
+        page: int = 1,
+        per_page: int = 20,
+        sort: str = "created_at",
+        order: str = "desc",
+    ) -> Tuple[list[User], int]:
+        """
+        List users with pagination and filtering (admin endpoint).
+
+        Args:
+            q: Search query (case-insensitive, searches email and full_name)
+            page: Page number (1-indexed)
+            per_page: Items per page (max 100)
+            sort: Field to sort by
+            order: Sort order ('asc' or 'desc')
+
+        Returns:
+            Tuple of (users, total_count)
+        """
+        per_page = min(per_page, 100)
+
+        # Base query
+        stmt = select(User)
+
+        # Apply search filter
+        if q:
+            search_pattern = f"%{q.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    User.email.ilike(search_pattern),
+                    User.full_name.ilike(search_pattern),
+                )
+            )
+
+        # Count total
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = self.session.scalar(count_stmt) or 0
+
+        # Apply sorting
+        sort_column = getattr(User, sort, User.created_at)
+        direction = desc if order.lower() == "desc" else asc
+        stmt = stmt.order_by(direction(sort_column))
+
+        # Apply pagination
+        offset = (page - 1) * per_page
+        stmt = stmt.limit(per_page).offset(offset)
+
+        # Execute
+        users = list(self.session.execute(stmt).scalars().all())
+
+        return users, total
+
+    def get_with_organisations(self, user_id: int) -> Optional[User]:
+        """
+        Get user with their organisation memberships loaded.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            User with organisations relationship loaded, or None
+        """
+        from sqlalchemy.orm import joinedload
+
+        stmt = (
+            select(User)
+            .where(User.id == user_id)
+            .options(joinedload(User.organisations))
+        )
+        return self.session.execute(stmt).unique().scalar_one_or_none()
+
+    def update(
+        self,
+        user_id: int,
+        email: Optional[str] = None,
+        password_hash: Optional[str] = None,
+        full_name: Optional[str] = None,
+    ) -> Optional[User]:
+        """
+        Update user fields (admin endpoint).
+
+        Args:
+            user_id: User ID
+            email: New email (optional)
+            password_hash: New password hash (optional)
+            full_name: New full name (optional)
+
+        Returns:
+            Updated user or None if not found
+        """
+        from datetime import datetime
+
+        user = self.get_by_id(user_id)
+        if user:
+            if email is not None:
+                user.email = email
+            if password_hash is not None:
+                user.password_hash = password_hash
+            if full_name is not None:
+                user.full_name = full_name
+            user.updated_at = datetime.utcnow()
+            self.session.flush()
+        return user
+
+    def delete(self, user_id: int) -> bool:
+        """
+        Delete a user (admin endpoint).
+
+        Note: This will cascade delete all organisation memberships, cases, etc.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            True if deleted, False if not found
+        """
+        user = self.get_by_id(user_id)
+        if user:
+            self.session.delete(user)
+            self.session.flush()
+            return True
+        return False
 
 
 class CaseRepository:
