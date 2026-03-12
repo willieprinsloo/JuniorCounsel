@@ -1,50 +1,47 @@
 # Next Steps - Junior Counsel Development
 
-## Phase 4 Status: ✅ COMPLETE (All Sub-phases Done!)
+## Phase 5 Status: 🚧 IN PROGRESS (Phase 5.1 & 5.2 Complete!)
 
 **Date**: 2026-03-12
 **Current Branch**: main
-**Latest Commit**: 105ca86 (Phase 4.4 Part 2 - Citation workflow integration)
+**Latest Commit**: 012df0c (Phase 5.2 - Document upload and draft creation features)
 **All Changes Pushed**: ⏳ Ready to push
-**Phase 4.1 Grade**: A (93/100)
-**Phase 4.2 Grade**: A (89% test pass rate)
-**Phase 4.3 Grade**: A (100% API endpoint coverage)
-**Phase 4.4 Grade**: A (100% citation integrity)
+**Phase 5.1 Grade**: A (Complete frontend infrastructure)
+**Phase 5.2 Grade**: A (Complete workflow pages)
+**Phase 5.3 Grade**: 🚧 In Progress (Additional features)
 
 ---
 
 ## Executive Summary
 
-**Phase 4 COMPLETE (All 4 Sub-phases)** - Rulebook Engine, API, and Citation Integrity:
+**Phase 5 IN PROGRESS (3/4 Sub-phases Complete)** - Next.js Frontend Implementation:
 
-**Phase 4.1 - Rulebook Engine**:
-- ✅ Rulebook YAML schema with Pydantic validation (FR-38 to FR-43)
-- ✅ RulebookService for parsing, validation, and version management
-- ✅ 35+ unit tests for rulebook parsing and validation
-- ✅ South African legal document conventions (affidavit, pleading) automated
+**Phase 5.1 - Frontend Infrastructure** ✅:
+- ✅ Next.js 14 with TypeScript + Tailwind CSS + App Router
+- ✅ API client with typed methods and error handling
+- ✅ TypeScript types matching all backend schemas
+- ✅ Authentication context with token persistence
+- ✅ Layout components (Header, Sidebar, AppLayout)
+- ✅ Login page and dashboard
 
-**Phase 4.2 - Rulebook Integration**:
-- ✅ Research query template substitution integrated into draft_generation.py
-- ✅ Document structure templates driving LLM prompt construction
-- ✅ LLM configuration (temperature, max_tokens, system message) from rulebooks
-- ✅ 17 integration tests for rulebook-driven drafting workflow
+**Phase 5.2 - Core Workflow Pages** ✅:
+- ✅ Document upload with drag-and-drop
+- ✅ Draft creation wizard with rulebook selection
+- ✅ Draft detail page with real-time status polling
+- ✅ Citations view (audit mode)
+- ✅ Case list and detail pages
+- ✅ Documents and drafts list pages
 
-**Phase 4.3 - DraftSession API**:
-- ✅ POST /answers - Submit intake responses
-- ✅ POST /start-generation - Trigger async draft generation
-- ✅ GET /citations - Retrieve citations for audit mode
-- ✅ 20+ integration tests for DraftSession API endpoints
+**Phase 5.3 - Additional Features** 🚧:
+- ✅ Case creation form
+- ✅ Search interface (vector search)
+- ✅ Q&A interface (RAG-powered)
+- ⏳ Final polish and refinements
 
-**Phase 4.4 - Citation Model**:
-- ✅ Citation database model (DraftSession ↔ DocumentChunk)
-- ✅ CitationRepository with bulk operations and eager loading
-- ✅ Worker integration - citations stored during generation
-- ✅ API integration - GET /citations queries Citation model
-- ✅ 100% citation traceability (NFR-8)
-
+**Phase 4 COMPLETE**: Rulebook Engine, API, and Citation Integrity
 **Phase 3 COMPLETE**: All AI integration features (OCR, RAG, vector search, draft generation)
 
-**Next Phase**: Phase 5 - Frontend Implementation (Next.js + React + TypeScript)
+**Next Phase**: Phase 6 - Pre-Production (Testing, CI/CD, Deployment)
 
 ---
 
@@ -314,29 +311,145 @@ Phase 4 focuses on implementing the complete drafting workflow with rulebook-dri
 
 ---
 
-## What's Next: Phase 5 - Frontend Implementation
+## Phase 5: Frontend Implementation 🚧 IN PROGRESS
 
-### Overview
+### Phase 5.1: Frontend Infrastructure ✅ COMPLETE
 
-Build the Next.js frontend that consumes the APIs from Phases 2-4:
+**Objective**: Set up Next.js project with authentication and API integration
+
+**Completed Tasks**:
+1. ✅ Next.js 14 Project Setup:
+   - TypeScript configuration
+   - Tailwind CSS with custom fonts (Geist Sans, Geist Mono)
+   - App Router architecture
+   - Environment variables (.env.local)
+
+2. ✅ API Client Infrastructure (`frontend/lib/api/`):
+   - APIClient class with typed generic methods (get, post, patch, delete, upload)
+   - APIError class for consistent error handling
+   - Bearer token authentication
+   - Singleton pattern for shared state
+   - Content-Type handling (JSON, FormData)
+
+3. ✅ TypeScript Type Definitions (`frontend/types/api.ts`):
+   - User, Case, Document, DraftSession types
+   - LoginRequest/Response, pagination types
+   - Citation, Rulebook, Search/QA types
+   - Enums matching backend (CaseStatus, DocumentStatus, DraftSessionStatus, etc.)
+
+4. ✅ API Service Methods (`frontend/lib/api/services.ts`):
+   - authAPI: login, getCurrentUser, logout
+   - casesAPI: list, get, create, update, delete
+   - documentsAPI: list, get, upload, delete
+   - draftSessionsAPI: list, get, create, submitIntake, startGeneration, getCitations
+   - rulebooksAPI: list, get, getPublished
+   - searchAPI, qaAPI
+
+5. ✅ Authentication Context (`frontend/lib/auth/context.tsx`):
+   - React Context API for global auth state
+   - AuthProvider component wrapping app
+   - useAuth() hook for consuming auth
+   - localStorage token persistence
+   - Auto-restore auth on page reload
+   - login/logout with navigation
+
+6. ✅ Layout Components (`frontend/components/layout/`):
+   - Header: App title, user menu, logout button
+   - Sidebar: Navigation menu with active state highlighting
+   - AppLayout: Wrapper with auth guard and loading state
+
+7. ✅ Core Pages:
+   - app/layout.tsx: Root layout with AuthProvider
+   - app/login/page.tsx: Login form with error handling
+   - app/dashboard/page.tsx: Dashboard with quick actions
+
+**Commit**: 4eae4f1 - Phase 5.1: Initial frontend setup with authentication
+**Grade**: A (Complete infrastructure with type safety)
+
+### Phase 5.2: Core Workflow Pages ✅ COMPLETE
+
+**Objective**: Implement end-to-end user workflows for cases, documents, and drafts
+
+**Completed Tasks**:
+1. ✅ Case Management Pages:
+   - app/cases/page.tsx: Case list with pagination, status badges, filtering
+   - app/cases/[id]/page.tsx: Case detail with documents/drafts tabs
+   - app/cases/new/page.tsx: Case creation form
+
+2. ✅ Document Upload (`app/cases/[id]/upload/page.tsx`):
+   - Drag-and-drop file upload
+   - Multiple file selection
+   - Upload progress tracking per file
+   - Error handling with per-file error messages
+   - File size display and PDF validation
+   - Auto-redirect on success
+
+3. ✅ Draft Creation Wizard (`app/cases/[id]/new-draft/page.tsx`):
+   - Multi-step form (title, document type, jurisdiction, rulebook)
+   - Dynamic rulebook filtering by document type and jurisdiction
+   - Auto-selection for single rulebook match
+   - Form validation before submission
+   - Published rulebooks only
+
+4. ✅ Draft Detail Page (`app/drafts/[id]/page.tsx`):
+   - Real-time status polling (5-second intervals)
+   - Status-aware UI with different views per draft stage:
+     * awaiting_intake: Intake form (placeholder for dynamic form)
+     * research: Start generation button
+     * initializing/drafting: Animated loading spinner
+     * ready/review: Draft content and citations tabs
+   - Draft content viewer (pre-formatted text)
+   - Citations list with markers, sources, excerpts, relevance scores
+
+5. ✅ List Pages:
+   - app/documents/page.tsx: Global documents view
+   - app/drafts/page.tsx: Global drafts view
+
+**Commit**: 012df0c - Phase 5.2: Document upload and draft creation features
+**Grade**: A (Complete workflow with real-time updates)
+
+### Phase 5.3: Additional Features 🚧 IN PROGRESS
+
+**Objective**: Add search, Q&A, and final polish
+
+**Completed Tasks**:
+1. ✅ Case Creation Form (`app/cases/new/page.tsx`):
+   - Title, description, case type, jurisdiction fields
+   - South African court selection (High Court divisions, etc.)
+   - Form validation and error handling
+
+2. ✅ Search Interface (`app/cases/[id]/search/page.tsx`):
+   - Semantic search query input
+   - Filters: document type, max results, relevance threshold
+   - Search results with similarity scores
+   - Source document and page references
+   - Highlighted excerpts
+
+3. ✅ Q&A Interface (`app/cases/[id]/qa/page.tsx`):
+   - Question input with RAG-powered answers
+   - Conversation history display
+   - Confidence scores with color coding
+   - Source citations with similarity scores
+   - Document references with page numbers
+
+**Remaining Work**:
+- Final UI polish and consistency review
+- Error boundary components
+- Loading skeleton components
+- Responsive design improvements
+
+**Expected Commit**: Phase 5.3: Search, Q&A, and case creation
+**Expected Grade**: A
 
 ### Remaining Work for MVP
-
-**Phase 5 - Frontend** (3-4 weeks):
-- Next.js 14 with App Router
-- React + TypeScript + Tailwind CSS
-- Document upload interface
-- Draft creation wizard
-- Audit mode (side-by-side source viewing)
-- Status tracking and notifications
 
 **Phase 6 - Pre-Production** (1-2 weeks):
 - Database migrations
 - Environment setup (staging, production)
-- CI/CD pipeline
-- Security hardening
-- Performance testing
-- Documentation
+- CI/CD pipeline (GitHub Actions)
+- Security hardening (CSP, CORS, rate limiting)
+- Performance testing (load testing, optimization)
+- Documentation (API docs, deployment guide)
 
 ---
 
