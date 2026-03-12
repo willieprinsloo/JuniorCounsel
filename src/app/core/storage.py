@@ -118,8 +118,9 @@ def detect_needs_ocr(file: UploadFile) -> bool:
 
     Heuristics:
     - Image files (jpg, png, tiff) always need OCR
-    - PDF files: Check if image-based (Phase 3 - use pypdf to detect)
-    - For now: Conservative approach - assume PDFs might need OCR
+    - PDF files: Check if image-based by extracting text from first page
+    - If PDF has minimal text (<50 chars), assume it's scanned and needs OCR
+    - Word docs, txt files don't need OCR
 
     Args:
         file: Uploaded file
@@ -133,11 +134,36 @@ def detect_needs_ocr(file: UploadFile) -> bool:
     if filename.endswith(('.jpg', '.jpeg', '.png', '.tiff', '.tif', '.bmp')):
         return True
 
-    # PDF files: Assume might need OCR (refine in Phase 3)
+    # PDF files: Check if they have extractable text
     if filename.endswith('.pdf'):
-        # TODO: In Phase 3, use pypdf to check if PDF has text layer
-        # For now, conservative: assume OCR needed
-        return True
+        try:
+            from pypdf import PdfReader
+            import io
+
+            # Read file content
+            file_content = file.file.read()
+            # Reset file pointer so it can be read again later
+            file.file.seek(0)
+
+            # Create PDF reader from bytes
+            pdf_reader = PdfReader(io.BytesIO(file_content))
+
+            # Check first page for text
+            if len(pdf_reader.pages) > 0:
+                first_page_text = pdf_reader.pages[0].extract_text()
+
+                # If we extracted meaningful text (>50 chars), no OCR needed
+                if first_page_text and len(first_page_text.strip()) > 50:
+                    return False
+
+            # No text found or minimal text - needs OCR
+            return True
+
+        except Exception as e:
+            # If we can't read the PDF, assume it needs OCR
+            # Reset file pointer in case of error
+            file.file.seek(0)
+            return True
 
     # Word docs, txt files don't need OCR
     return False
