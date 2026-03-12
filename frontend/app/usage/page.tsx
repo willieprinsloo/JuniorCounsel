@@ -10,9 +10,11 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { usageAPI, UsageDashboard } from '@/lib/api/usage';
 
 export default function UsagePage() {
+  const router = useRouter();
   const [dashboard, setDashboard] = useState<UsageDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,8 +28,14 @@ export default function UsagePage() {
       setLoading(true);
       const data = await usageAPI.getUsageDashboard();
       setDashboard(data);
+      setError(null);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load usage dashboard');
+      // Handle authentication errors by redirecting to login
+      if (err.status === 401) {
+        router.push('/login?redirect=/usage');
+        return;
+      }
+      setError(err.message || err.response?.data?.detail || 'Failed to load usage dashboard');
     } finally {
       setLoading(false);
     }
