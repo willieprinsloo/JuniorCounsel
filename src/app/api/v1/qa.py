@@ -10,7 +10,7 @@ from app.dependencies import get_current_user
 from app.middleware.database import get_db
 from app.persistence.models import User, TokenUsageTypeEnum, Case
 from app.persistence.repositories import TokenUsageRepository, CaseRepository
-from app.schemas.qa import QARequest, QAResponse, Citation
+from app.schemas.qa import QARequest, QAResponse, SearchResult
 from app.api.v1.search import search_documents
 
 router = APIRouter()
@@ -66,21 +66,26 @@ def ask_question(
 
     # Step 2: Build context from search results
     context_parts = []
-    citations = []
+    sources = []
 
     for i, result in enumerate(search_results.results):
         citation_id = f"[{i+1}]"
         context_parts.append(f"{citation_id} {result.content}")
-        citations.append(Citation(
-            id=citation_id,
-            document=result.document_filename,
-            page=result.page_number,
-            similarity=result.similarity
+
+        # Convert search result to SearchResult schema
+        sources.append(SearchResult(
+            chunk_id=result.chunk_id,
+            document_id=result.document_id,
+            document_filename=result.document_filename,
+            content=result.content,
+            page_number=result.page_number,
+            similarity=result.similarity,
+            citation=result.citation
         ))
 
     context = "\n\n".join(context_parts)
 
-    logger.debug(f"Built context from {len(citations)} chunks, {len(context)} chars")
+    logger.debug(f"Built context from {len(sources)} chunks, {len(context)} chars")
 
     # Step 3: Generate answer with LLM
     try:
@@ -140,9 +145,13 @@ Answer (with citations):"""
             detail=f"Failed to generate answer: {str(e)}"
         )
 
+    # Calculate confidence based on average similarity of top sources
+    avg_similarity = sum(s.similarity for s in sources) / len(sources) if sources else 0.0
+    confidence = min(avg_similarity, 1.0)  # Ensure it's between 0 and 1
+
     return QAResponse(
         question=qa_request.question,
         answer=generation_result.content,
-        citations=citations,
-        context_used=len(search_results.results)
+        sources=sources,
+        confidence=confidence
     )
