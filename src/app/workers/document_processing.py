@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal
 from app.core.ai_providers import get_embedding_provider, get_llm_provider
+from app.core.storage import storage
 from app.persistence.models import DocumentStatusEnum, DocumentChunk, TokenUsageTypeEnum
 from app.persistence.repositories import DocumentRepository, TokenUsageRepository
 from app.workers.ocr import perform_ocr
@@ -54,7 +55,8 @@ def process_document_job(document_id: str):
         if not document.file_path:
             raise ValueError(f"Document {document_id} has no file path")
 
-        file_path = document.file_path
+        # Convert relative path to absolute path using storage
+        file_path = storage.get_file_path(document.file_path)
 
         # Update status to processing
         doc_repo.update_status(
