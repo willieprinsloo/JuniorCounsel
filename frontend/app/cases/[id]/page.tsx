@@ -25,6 +25,7 @@ export default function CaseDetailPage() {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'documents' | 'drafts'>('documents');
 
+  // Load case data
   useEffect(() => {
     const loadCaseData = async () => {
       try {
@@ -57,6 +58,33 @@ export default function CaseDetailPage() {
 
     loadCaseData();
   }, [caseId]);
+
+  // Auto-refresh documents when processing
+  useEffect(() => {
+    // Check if any documents are processing
+    const hasProcessingDocs = documents.some(
+      doc => doc.overall_status === 'processing' || doc.overall_status === 'queued'
+    );
+
+    if (!hasProcessingDocs || activeTab !== 'documents') {
+      return;
+    }
+
+    // Poll every 3 seconds for status updates
+    const interval = setInterval(async () => {
+      try {
+        const docsResponse = await documentsAPI.list({
+          case_id: caseId,
+          per_page: 50,
+        });
+        setDocuments(docsResponse.data);
+      } catch (err) {
+        console.error('Failed to refresh documents:', err);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [documents, caseId, activeTab]);
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
