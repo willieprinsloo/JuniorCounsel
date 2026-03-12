@@ -1,10 +1,11 @@
 """
 Pydantic schemas for case endpoints.
 """
-from typing import Optional
+from typing import Optional, Any
 from datetime import datetime
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 
 from app.persistence.models import CaseStatusEnum
 
@@ -37,7 +38,7 @@ class CaseUpdate(BaseModel):
 class CaseResponse(BaseModel):
     """Schema for case data in responses."""
 
-    id: str
+    id: str  # UUID converted to string via field_serializer
     organisation_id: int
     owner_id: Optional[int] = None
     title: str
@@ -45,11 +46,19 @@ class CaseResponse(BaseModel):
     case_type: Optional[str] = None
     jurisdiction: Optional[str] = None
     status: CaseStatusEnum
-    metadata: Optional[dict] = None
+    case_metadata: Optional[dict] = None
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    @field_serializer('id')
+    def serialize_id(self, value: UUID | str, _info) -> str:
+        """Convert UUID to string for JSON serialization."""
+        return str(value)
+
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True
+    }
 
 
 class CaseListResponse(BaseModel):
