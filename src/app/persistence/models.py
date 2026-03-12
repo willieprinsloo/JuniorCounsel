@@ -318,6 +318,52 @@ class Citation(Base):
     document_chunk: Mapped[DocumentChunk] = relationship()
 
 
+class ChatSession(Base):
+    """
+    Q&A conversation session within a case.
+
+    Groups related questions and answers so users can continue
+    conversations when they return to the case.
+    """
+    __tablename__ = "chat_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cases.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+
+    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Optional user-set title
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user: Mapped[User] = relationship()
+    messages: Mapped[list["ChatMessage"]] = relationship(back_populates="chat_session", order_by="ChatMessage.created_at")
+
+
+class ChatMessage(Base):
+    """
+    Individual Q&A exchange within a chat session.
+
+    Stores both the user's question and the AI-generated answer
+    with source citations for persistence across sessions.
+    """
+    __tablename__ = "chat_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid4)
+    chat_session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("chat_sessions.id", ondelete="CASCADE"), index=True)
+
+    question: Mapped[str] = mapped_column(Text)
+    answer: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(Float)  # 0-1 confidence score
+
+    # Store sources/citations as JSONB (list of SearchResult objects)
+    sources: Mapped[Optional[list[dict]]] = mapped_column(JSONB, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    chat_session: Mapped[ChatSession] = relationship(back_populates="messages")
+
+
 class TokenUsageTypeEnum(str, enum.Enum):
     """Type of API operation that consumed tokens."""
     EMBEDDING = "embedding"  # Vector embedding generation
