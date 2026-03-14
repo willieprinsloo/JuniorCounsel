@@ -855,7 +855,18 @@ class DraftSessionRepository:
 
     def get_by_id(self, draft_session_id: str) -> Optional[DraftSession]:
         """Get draft session by ID."""
-        return self.session.get(DraftSession, draft_session_id)
+        from uuid import UUID
+        # Convert string to UUID if needed
+        if isinstance(draft_session_id, str):
+            try:
+                draft_id_uuid = UUID(draft_session_id)
+            except ValueError:
+                return None
+        else:
+            draft_id_uuid = draft_session_id
+
+        stmt = select(DraftSession).where(DraftSession.id == draft_id_uuid)
+        return self.session.execute(stmt).scalar_one_or_none()
 
     def list(
         self,
@@ -937,7 +948,9 @@ class RulebookRepository:
 
     def get_by_id(self, rulebook_id: int) -> Optional[Rulebook]:
         """Get rulebook by ID."""
-        return self.session.get(Rulebook, rulebook_id)
+        # Use select() instead of session.get() to avoid identity map caching issues with JSONB columns
+        stmt = select(Rulebook).where(Rulebook.id == rulebook_id)
+        return self.session.execute(stmt).scalar_one_or_none()
 
     def list(
         self,

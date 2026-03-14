@@ -24,6 +24,7 @@ import type {
   DraftSessionCreate,
   DraftSessionListResponse,
   IntakeResponsesSubmit,
+  IntakeQuestionsResponse,
   CitationsListResponse,
   Rulebook,
   RulebookListResponse,
@@ -184,9 +185,47 @@ export const draftSessionsAPI = {
     );
   },
 
+  getIntakeQuestions: async (draftSessionId: string): Promise<IntakeQuestionsResponse> => {
+    return apiClient.get<IntakeQuestionsResponse>(
+      `/api/v1/draft-sessions/${draftSessionId}/intake-questions`
+    );
+  },
+
   getCitations: async (draftSessionId: string): Promise<CitationsListResponse> => {
     return apiClient.get<CitationsListResponse>(
       `/api/v1/draft-sessions/${draftSessionId}/citations`
+    );
+  },
+
+  updateContent: async (
+    draftSessionId: string,
+    content: string
+  ): Promise<DraftSession> => {
+    return apiClient.put<DraftSession>(
+      `/api/v1/draft-sessions/${draftSessionId}/content`,
+      { content }
+    );
+  },
+
+  chat: async (
+    draftSessionId: string,
+    message: string,
+    isFirstMessage?: boolean
+  ): Promise<{
+    draft_session_id: string;
+    updated_content: string;
+    ai_response: string;
+    tokens_used: number;
+    iterations: number;
+    tools_used?: string[];
+    tool_results?: any[];
+    document_modified?: boolean;
+    modifications?: any[];
+    is_welcome_message?: boolean;
+  }> => {
+    return apiClient.post(
+      `/api/v1/draft-sessions/${draftSessionId}/chat`,
+      { message, is_first_message: isFirstMessage }
     );
   },
 
@@ -395,7 +434,6 @@ export const adminOrganisationsAPI = {
 
 // Admin - Rulebook Management
 import type {
-  Rulebook,
   RulebookUpload,
   RulebookUpdate,
   RulebookDetail,
@@ -404,6 +442,10 @@ import type {
 export const adminRulebooksAPI = {
   upload: async (data: RulebookUpload): Promise<Rulebook> => {
     return apiClient.post<Rulebook>('/api/v1/admin/rulebooks/', data);
+  },
+
+  get: async (rulebookId: number): Promise<RulebookDetail> => {
+    return apiClient.get<RulebookDetail>(`/api/v1/admin/rulebooks/${rulebookId}`);
   },
 
   update: async (rulebookId: number, data: RulebookUpdate): Promise<Rulebook> => {
@@ -416,5 +458,31 @@ export const adminRulebooksAPI = {
 
   deprecate: async (rulebookId: number): Promise<Rulebook> => {
     return apiClient.post<Rulebook>(`/api/v1/admin/rulebooks/${rulebookId}/deprecate`, {});
+  },
+};
+
+// Document Assistant
+export const documentAssistantAPI = {
+  analyze: async (caseId: string, analysisType: 'full' | 'summary' | 'key_facts' = 'full'): Promise<any> => {
+    return apiClient.post(`/api/v1/cases/${caseId}/documents/analyze`, {
+      analysis_type: analysisType
+    });
+  },
+
+  chat: async (
+    caseId: string,
+    message: string,
+    conversationHistory: Array<{ role: string; content: string }> = []
+  ): Promise<{
+    ai_response: string;
+    tools_used: string[];
+    tool_results: Array<{ tool: string; result: any }>;
+    suggested_actions: Array<{ action: string; label: string; rulebook_id?: number; metadata?: any }>;
+    draft_session_id?: string;
+  }> => {
+    return apiClient.post(`/api/v1/cases/${caseId}/documents/chat`, {
+      message,
+      conversation_history: conversationHistory
+    });
   },
 };

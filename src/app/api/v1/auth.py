@@ -105,17 +105,55 @@ def login(
 
 
 @router.get("/me", response_model=UserResponse)
-def get_me(current_user: User = Depends(get_current_user)):
+def get_me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
-    Get current authenticated user.
+    Get current authenticated user with organisation info.
 
     Args:
         current_user: Current user from JWT token
+        db: Database session
 
     Returns:
-        User object
+        User object with organisation_id, organisation_name, and role
     """
-    return current_user
+    from app.persistence.models import OrganisationUser, Organisation
+    from sqlalchemy import select
+
+    # Get user's organisation relationship
+    stmt = select(OrganisationUser, Organisation).join(
+        Organisation, OrganisationUser.organisation_id == Organisation.id
+    ).where(OrganisationUser.user_id == current_user.id)
+
+    result = db.execute(stmt).first()
+
+    if result:
+        org_user, organisation = result
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"User {current_user.id}: org_user.organisation_id={org_user.organisation_id}, organisation.id={organisation.id}, organisation.name={organisation.name}")
+
+        return UserResponse(
+            id=current_user.id,
+            email=current_user.email,
+            full_name=current_user.full_name,
+            organisation_id=organisation.id,
+            organisation_name=organisation.name,
+            role=org_user.role.value
+        )
+    else:
+        # User not linked to organisation yet
+        return UserResponse(
+            id=current_user.id,
+            email=current_user.email,
+            full_name=current_user.full_name,
+            organisation_id=None,
+            organisation_name=None,
+            role=None
+        )
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)

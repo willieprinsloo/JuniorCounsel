@@ -1,10 +1,18 @@
 """
 Pydantic schemas for upload session endpoints.
 """
-from typing import Optional
+from typing import Optional, Any, Annotated
 from datetime import datetime
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, BeforeValidator
+
+
+def uuid_to_str(v: Any) -> str:
+    """Convert UUID to string."""
+    if isinstance(v, UUID):
+        return str(v)
+    return str(v)
 
 
 class UploadSessionCreate(BaseModel):
@@ -19,8 +27,8 @@ class UploadSessionCreate(BaseModel):
 class UploadSessionResponse(BaseModel):
     """Schema for upload session data in responses."""
 
-    id: str
-    case_id: str
+    id: Annotated[str, BeforeValidator(uuid_to_str)]  # UUID converted to string
+    case_id: Annotated[str, BeforeValidator(uuid_to_str)]  # UUID converted to string
     uploaded_by_id: int
     total_documents: int
     completed_documents: int

@@ -15,6 +15,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 
 export interface ChatMessage {
   id: string;
@@ -166,7 +168,14 @@ export function ChatBox({
                 >
                   {enableMarkdown && message.role !== 'user' ? (
                     <div className="prose prose-sm dark:prose-invert max-w-none">
-                      <ReactMarkdown>{message.content}</ReactMarkdown>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm, remarkBreaks]}
+                        components={{
+                          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
                     </div>
                   ) : (
                     <p className="text-sm whitespace-pre-wrap leading-relaxed">

@@ -60,8 +60,7 @@ export async function getUsageSummary(params?: UsageQueryParams): Promise<UsageS
   if (params?.usage_type) query.append('usage_type', params.usage_type);
 
   const url = `/api/v1/usage/summary${query.toString() ? `?${query}` : ''}`;
-  const response = await apiClient.get(url);
-  return response.data;
+  return apiClient.get<UsageSummary>(url);
 }
 
 /**
@@ -75,8 +74,8 @@ export async function getUsageByType(params?: UsageQueryParams): Promise<UsageBy
   if (params?.end_date) query.append('end_date', params.end_date);
 
   const url = `/api/v1/usage/by-type${query.toString() ? `?${query}` : ''}`;
-  const response = await apiClient.get(url);
-  return response.data.usage_by_type;
+  const response = await apiClient.get<{ usage_by_type: UsageByTypeItem[] }>(url);
+  return response.usage_by_type;
 }
 
 /**
@@ -91,8 +90,8 @@ export async function getTopCases(params?: UsageQueryParams): Promise<TopCaseIte
   if (params?.limit) query.append('limit', params.limit.toString());
 
   const url = `/api/v1/usage/top-cases${query.toString() ? `?${query}` : ''}`;
-  const response = await apiClient.get(url);
-  return response.data.top_cases;
+  const response = await apiClient.get<{ top_cases: TopCaseItem[] }>(url);
+  return response.top_cases;
 }
 
 /**
@@ -106,8 +105,7 @@ export async function getUsageDashboard(params?: UsageQueryParams): Promise<Usag
   if (params?.end_date) query.append('end_date', params.end_date);
 
   const url = `/api/v1/usage/dashboard${query.toString() ? `?${query}` : ''}`;
-  const response = await apiClient.get(url);
-  return response.data;
+  return apiClient.get<UsageDashboard>(url);
 }
 
 export const usageAPI = {

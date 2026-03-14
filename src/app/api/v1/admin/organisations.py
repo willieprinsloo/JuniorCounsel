@@ -229,7 +229,7 @@ def list_organisation_members(
                 email=membership.user.email,
                 full_name=membership.user.full_name,
                 role=membership.role,
-                joined_at=membership.created_at,
+                joined_at=None,  # OrganisationUser doesn't have timestamps
             )
         )
 
@@ -300,7 +300,7 @@ def add_organisation_member(
         email=user.email,
         full_name=user.full_name,
         role=membership.role,
-        joined_at=membership.created_at,
+        joined_at=None,  # OrganisationUser doesn't have timestamps
     )
 
 
@@ -344,7 +344,7 @@ def update_member_role(
         email=user.email,
         full_name=user.full_name,
         role=updated_membership.role,
-        joined_at=updated_membership.created_at,
+        joined_at=None,  # OrganisationUser doesn't have timestamps
     )
 
 

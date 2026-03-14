@@ -476,7 +476,7 @@ export default function AdminOrganisationsPage() {
                         </select>
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">
-                        {new Date(member.joined_at).toLocaleDateString()}
+                        {member.joined_at ? new Date(member.joined_at).toLocaleDateString() : <span className="italic">N/A</span>}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button

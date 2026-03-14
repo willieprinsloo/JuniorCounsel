@@ -1,12 +1,20 @@
 """
 Pydantic schemas for draft session endpoints.
 """
-from typing import Optional
+from typing import Optional, Any, Annotated
 from datetime import datetime
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, BeforeValidator
 
 from app.persistence.models import DraftSessionStatusEnum
+
+
+def uuid_to_str(v: Any) -> str:
+    """Convert UUID to string."""
+    if isinstance(v, UUID):
+        return str(v)
+    return str(v)
 
 
 class DraftSessionCreate(BaseModel):
@@ -33,8 +41,8 @@ class DraftSessionUpdate(BaseModel):
 class DraftSessionResponse(BaseModel):
     """Schema for draft session data in responses."""
 
-    id: str
-    case_id: str
+    id: Annotated[str, BeforeValidator(uuid_to_str)]  # UUID converted to string
+    case_id: Annotated[str, BeforeValidator(uuid_to_str)]  # UUID converted to string
     user_id: int
     rulebook_id: int
     title: str
@@ -56,7 +64,10 @@ class DraftSessionResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True
+    }
 
 
 class DraftSessionListResponse(BaseModel):
@@ -83,7 +94,7 @@ class CitationResponse(BaseModel):
     marker: str  # e.g., "[1]", "[2]"
     content: str  # Excerpt from source document
     document_name: str
-    document_id: str
+    document_id: Annotated[str, BeforeValidator(uuid_to_str)]  # UUID converted to string
     page: Optional[int] = None
     similarity: Optional[float] = None
 
@@ -93,6 +104,6 @@ class CitationResponse(BaseModel):
 class CitationsListResponse(BaseModel):
     """Schema for list of citations in audit mode."""
 
-    draft_session_id: str
+    draft_session_id: Annotated[str, BeforeValidator(uuid_to_str)]  # UUID converted to string
     citations: list[CitationResponse]
     total_citations: int

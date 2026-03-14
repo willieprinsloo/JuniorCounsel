@@ -18,8 +18,11 @@ export interface User {
   id: number;
   email: string;
   full_name: string | null;
-  created_at: string;
-  updated_at: string;
+  organisation_id?: number | null;
+  organisation_name?: string | null;
+  role?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 // Password Reset types
@@ -182,6 +185,20 @@ export interface DraftSessionListResponse {
 
 export interface IntakeResponsesSubmit {
   intake_responses: Record<string, any>;
+}
+
+// Intake Question types
+export interface IntakeQuestion {
+  field: string;
+  prompt: string;
+  required: boolean;
+  type?: string;
+  options?: string[];
+}
+
+export interface IntakeQuestionsResponse {
+  draft_session_id: string;
+  questions: IntakeQuestion[];
 }
 
 // Citation types

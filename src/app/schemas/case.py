@@ -1,7 +1,7 @@
 """
 Pydantic schemas for case endpoints.
 """
-from typing import Optional, Any
+from typing import Optional, Any, Union, List
 from datetime import datetime
 from uuid import UUID
 
@@ -51,7 +51,7 @@ class CaseResponse(BaseModel):
     updated_at: datetime
 
     @field_serializer('id')
-    def serialize_id(self, value: UUID | str, _info) -> str:
+    def serialize_id(self, value: Union[UUID, str], _info) -> str:
         """Convert UUID to string for JSON serialization."""
         return str(value)
 
@@ -64,7 +64,7 @@ class CaseResponse(BaseModel):
 class CaseListResponse(BaseModel):
     """Schema for paginated case list response."""
 
-    data: list[CaseResponse]
+    data: List[CaseResponse]
     page: int
     per_page: int
     total: int

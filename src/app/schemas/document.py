@@ -1,10 +1,11 @@
 """
 Pydantic schemas for document endpoints.
 """
-from typing import Optional
+from typing import Optional, Any
 from datetime import datetime
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from app.persistence.models import DocumentStatusEnum
 
@@ -60,6 +61,29 @@ class DocumentResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, data: Any) -> Any:
+        """Convert UUID fields to strings before validation."""
+        if isinstance(data, dict):
+            # Convert all UUID fields
+            for key in ['id', 'case_id', 'upload_session_id']:
+                if key in data and isinstance(data[key], UUID):
+                    data[key] = str(data[key])
+            return data
+        # Handle SQLAlchemy model objects
+        if hasattr(data, '__dict__'):
+            data_dict = {}
+            for key, value in data.__dict__.items():
+                if key.startswith('_'):
+                    continue
+                if isinstance(value, UUID):
+                    data_dict[key] = str(value)
+                else:
+                    data_dict[key] = value
+            return data_dict
+        return data
 
 
 class DocumentListResponse(BaseModel):

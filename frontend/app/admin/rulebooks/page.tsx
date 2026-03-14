@@ -16,6 +16,30 @@ import type {
   RulebookStatus,
 } from '@/types/api';
 
+// South African Jurisdictions
+const SA_JURISDICTIONS = [
+  'South Africa (National)',
+  'Constitutional Court',
+  'Supreme Court of Appeal',
+  'Gauteng Division, Pretoria',
+  'Gauteng Local Division, Johannesburg',
+  'KwaZulu-Natal Division, Pietermaritzburg',
+  'KwaZulu-Natal Local Division, Durban',
+  'Western Cape Division, Cape Town',
+  'Eastern Cape Division, Makhanda (Grahamstown)',
+  'Eastern Cape Local Division, Port Elizabeth',
+  'Free State Division, Bloemfontein',
+  'Limpopo Division, Polokwane',
+  'Mpumalanga Division, Mbombela',
+  'Northern Cape Division, Kimberley',
+  'North West Division, Mahikeng',
+  'Labour Court',
+  'Labour Appeal Court',
+  'Land Claims Court',
+  'Competition Appeal Court',
+  'Electoral Court',
+];
+
 export default function AdminRulebooksPage() {
   const [rulebooks, setRulebooks] = useState<Rulebook[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +49,8 @@ export default function AdminRulebooksPage() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedRulebook, setSelectedRulebook] = useState<Rulebook | null>(null);
+  const [filterJurisdiction, setFilterJurisdiction] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<string>('');
   const [formData, setFormData] = useState<RulebookUpload | RulebookUpdate>({
     document_type: '',
     jurisdiction: '',
@@ -32,17 +58,90 @@ export default function AdminRulebooksPage() {
     source_yaml: '',
     label: '',
   });
+  const [yamlError, setYamlError] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   const perPage = 20;
+
+  const validateYAML = (yaml: string): boolean => {
+    setYamlError(null);
+    if (!yaml.trim()) {
+      setYamlError('YAML content cannot be empty');
+      return false;
+    }
+
+    // Basic YAML validation - check for common errors
+    const lines = yaml.split('\n');
+    let indentStack: number[] = [0];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.trim().startsWith('#') || !line.trim()) continue; // Skip comments and empty lines
+
+      const leadingSpaces = line.match(/^(\s*)/)?.[0].length || 0;
+
+      // Check if indentation is consistent (multiples of 2)
+      if (leadingSpaces % 2 !== 0) {
+        setYamlError(`Line ${i + 1}: Inconsistent indentation (should be multiples of 2 spaces)`);
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result as string;
+        setFormData({ ...formData, source_yaml: content });
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const downloadYAML = () => {
+    if (!formData.source_yaml) {
+      alert('No YAML content to download');
+      return;
+    }
+
+    const blob = new Blob([formData.source_yaml], { type: 'text/yaml' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const filename = selectedRulebook
+      ? `${selectedRulebook.document_type}_${selectedRulebook.version}.yaml`
+      : 'rulebook.yaml';
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  };
 
   const fetchRulebooks = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await rulebooksAPI.list({
+
+      // Build params object, only include filters if they have values
+      const params: any = {
         page,
         per_page: perPage,
-      });
+      };
+
+      if (filterJurisdiction) {
+        params.jurisdiction = filterJurisdiction;
+      }
+
+      if (filterStatus) {
+        params.status = filterStatus;
+      }
+
+      const response = await rulebooksAPI.list(params);
       setRulebooks(response.data);
       setTotal(response.total);
     } catch (err) {
@@ -55,10 +154,16 @@ export default function AdminRulebooksPage() {
 
   useEffect(() => {
     fetchRulebooks();
-  }, [page]);
+  }, [page, filterJurisdiction, filterStatus]);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validate YAML before submitting
+    if (!validateYAML(formData.source_yaml || '')) {
+      return;
+    }
+
     try {
       await adminRulebooksAPI.upload(formData as RulebookUpload);
       setShowUploadModal(false);
@@ -69,6 +174,7 @@ export default function AdminRulebooksPage() {
         source_yaml: '',
         label: '',
       });
+      setYamlError(null);
       fetchRulebooks();
     } catch (err) {
       const apiError = err as APIError;
@@ -79,6 +185,12 @@ export default function AdminRulebooksPage() {
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedRulebook) return;
+
+    // Validate YAML before submitting if it's being updated
+    if (formData.source_yaml && !validateYAML(formData.source_yaml)) {
+      return;
+    }
+
     try {
       await adminRulebooksAPI.update(selectedRulebook.id, formData as RulebookUpdate);
       setShowEditModal(false);
@@ -90,6 +202,7 @@ export default function AdminRulebooksPage() {
         source_yaml: '',
         label: '',
       });
+      setYamlError(null);
       fetchRulebooks();
     } catch (err) {
       const apiError = err as APIError;
@@ -119,13 +232,23 @@ export default function AdminRulebooksPage() {
     }
   };
 
-  const openEditModal = (rulebook: Rulebook) => {
+  const openEditModal = async (rulebook: Rulebook) => {
     setSelectedRulebook(rulebook);
-    setFormData({
-      label: rulebook.label || '',
-      source_yaml: '', // We don't have this in the list response
-    });
-    setShowEditModal(true);
+
+    try {
+      // Fetch full rulebook details including YAML
+      const fullRulebook = await adminRulebooksAPI.get(rulebook.id);
+
+      setFormData({
+        label: fullRulebook.label || '',
+        source_yaml: fullRulebook.source_yaml || '',  // Pre-fill with existing YAML
+      });
+      setShowEditModal(true);
+    } catch (err) {
+      const apiError = err as APIError;
+      console.error('Failed to load rulebook details:', apiError);
+      alert(apiError.message || 'Failed to load rulebook details for editing');
+    }
   };
 
   const getStatusBadge = (status: RulebookStatus) => {
@@ -172,6 +295,64 @@ export default function AdminRulebooksPage() {
           {error}
         </div>
       )}
+
+      {/* Filters */}
+      <div className="bg-card border border-border rounded-lg p-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Filter by Jurisdiction
+            </label>
+            <select
+              value={filterJurisdiction}
+              onChange={(e) => {
+                setFilterJurisdiction(e.target.value);
+                setPage(1); // Reset to first page
+              }}
+              className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+            >
+              <option value="">All Jurisdictions</option>
+              {SA_JURISDICTIONS.map((jurisdiction) => (
+                <option key={jurisdiction} value={jurisdiction}>
+                  {jurisdiction}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Filter by Status
+            </label>
+            <select
+              value={filterStatus}
+              onChange={(e) => {
+                setFilterStatus(e.target.value);
+                setPage(1); // Reset to first page
+              }}
+              className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+            >
+              <option value="">All Statuses</option>
+              <option value="draft">Draft</option>
+              <option value="published">Published</option>
+              <option value="deprecated">Deprecated</option>
+            </select>
+          </div>
+          {(filterJurisdiction || filterStatus) && (
+            <div className="flex items-end">
+              <button
+                onClick={() => {
+                  setFilterJurisdiction('');
+                  setFilterStatus('');
+                  setPage(1);
+                }}
+                className="px-4 py-2 border border-border rounded-md text-sm font-medium text-foreground hover:bg-accent"
+              >
+                Clear Filters
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Rulebooks Table */}
       {loading ? (
@@ -299,8 +480,8 @@ export default function AdminRulebooksPage() {
 
       {/* Upload Rulebook Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card border border-border rounded-lg p-6 w-full max-w-2xl">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold text-card-foreground mb-4">Upload New Rulebook</h2>
             <form onSubmit={handleUpload} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -312,7 +493,7 @@ export default function AdminRulebooksPage() {
                     type="text"
                     required
                     placeholder="e.g., affidavit, pleading"
-                    value={formData.document_type || ''}
+                    value={(formData as RulebookUpload).document_type || ''}
                     onChange={(e) => setFormData({ ...formData, document_type: e.target.value })}
                     className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
                   />
@@ -321,14 +502,19 @@ export default function AdminRulebooksPage() {
                   <label className="block text-sm font-medium text-foreground mb-1">
                     Jurisdiction *
                   </label>
-                  <input
-                    type="text"
+                  <select
                     required
-                    placeholder="e.g., South Africa"
-                    value={formData.jurisdiction || ''}
+                    value={(formData as RulebookUpload).jurisdiction || ''}
                     onChange={(e) => setFormData({ ...formData, jurisdiction: e.target.value })}
                     className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                  />
+                  >
+                    <option value="">Select jurisdiction...</option>
+                    {SA_JURISDICTIONS.map((jurisdiction) => (
+                      <option key={jurisdiction} value={jurisdiction}>
+                        {jurisdiction}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -340,7 +526,7 @@ export default function AdminRulebooksPage() {
                     type="text"
                     required
                     placeholder="e.g., 1.0.0"
-                    value={formData.version || ''}
+                    value={(formData as RulebookUpload).version || ''}
                     onChange={(e) => setFormData({ ...formData, version: e.target.value })}
                     className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
                   />
@@ -359,17 +545,54 @@ export default function AdminRulebooksPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">
-                  YAML Content *
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-foreground">
+                    YAML Content *
+                  </label>
+                  <div className="flex gap-2">
+                    <label className="inline-flex items-center px-3 py-1.5 border border-border text-xs font-medium rounded-md text-foreground bg-background hover:bg-muted cursor-pointer transition-colors">
+                      <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      Upload File
+                      <input
+                        type="file"
+                        accept=".yaml,.yml"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    {formData.source_yaml && (
+                      <button
+                        type="button"
+                        onClick={downloadYAML}
+                        className="inline-flex items-center px-3 py-1.5 border border-border text-xs font-medium rounded-md text-foreground bg-background hover:bg-muted transition-colors"
+                      >
+                        <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <textarea
                   required
-                  rows={12}
-                  placeholder="Paste YAML rulebook content here..."
+                  rows={25}
+                  placeholder="Paste YAML rulebook content here or upload a file..."
                   value={formData.source_yaml || ''}
-                  onChange={(e) => setFormData({ ...formData, source_yaml: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground font-mono text-sm"
+                  onChange={(e) => {
+                    setFormData({ ...formData, source_yaml: e.target.value });
+                    setYamlError(null);
+                  }}
+                  className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground font-mono text-sm resize-y"
                 />
+                {yamlError && (
+                  <p className="mt-2 text-sm text-destructive">{yamlError}</p>
+                )}
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Tip: Use 2-space indentation. Lines: {formData.source_yaml?.split('\n').length || 0}
+                </p>
               </div>
               <div className="flex justify-end gap-2 mt-6">
                 <button
@@ -402,8 +625,8 @@ export default function AdminRulebooksPage() {
 
       {/* Edit Rulebook Modal */}
       {showEditModal && selectedRulebook && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card border border-border rounded-lg p-6 w-full max-w-2xl">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold text-card-foreground mb-4">Edit Rulebook (Draft Only)</h2>
             <p className="text-sm text-muted-foreground mb-4">
               Only DRAFT rulebooks can be edited. To update a PUBLISHED rulebook, create a new version.
@@ -419,16 +642,53 @@ export default function AdminRulebooksPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">
-                  YAML Content (leave blank to keep current)
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-foreground">
+                    YAML Content
+                  </label>
+                  <div className="flex gap-2">
+                    <label className="inline-flex items-center px-3 py-1.5 border border-border text-xs font-medium rounded-md text-foreground bg-background hover:bg-muted cursor-pointer transition-colors">
+                      <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      Upload File
+                      <input
+                        type="file"
+                        accept=".yaml,.yml"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    {formData.source_yaml && (
+                      <button
+                        type="button"
+                        onClick={downloadYAML}
+                        className="inline-flex items-center px-3 py-1.5 border border-border text-xs font-medium rounded-md text-foreground bg-background hover:bg-muted transition-colors"
+                      >
+                        <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <textarea
-                  rows={12}
-                  placeholder="Paste new YAML content or leave blank..."
+                  rows={25}
+                  placeholder="Edit YAML content..."
                   value={formData.source_yaml || ''}
-                  onChange={(e) => setFormData({ ...formData, source_yaml: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground font-mono text-sm"
+                  onChange={(e) => {
+                    setFormData({ ...formData, source_yaml: e.target.value });
+                    setYamlError(null);
+                  }}
+                  className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground font-mono text-sm resize-y"
                 />
+                {yamlError && (
+                  <p className="mt-2 text-sm text-destructive">{yamlError}</p>
+                )}
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Tip: Use 2-space indentation. Lines: {formData.source_yaml?.split('\n').length || 0}
+                </p>
               </div>
               <div className="flex justify-end gap-2 mt-6">
                 <button

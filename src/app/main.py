@@ -87,7 +87,14 @@ from app.api.v1 import (
     chat_sessions,
     usage,
 )
-from app.api.v1.admin import users, organisations as admin_organisations, rulebooks as admin_rulebooks
+from app.api.v1.admin import (
+    users,
+    organisations as admin_organisations,
+    rulebooks as admin_rulebooks,
+    dashboard as admin_dashboard,
+    # health as admin_health,  # Temporarily disabled due to psutil architecture issue
+    queue as admin_queue,
+)
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(organisations.router, prefix="/api/v1/organisations", tags=["organisations"])
@@ -102,6 +109,9 @@ app.include_router(chat_sessions.router, prefix="/api/v1/chat-sessions", tags=["
 app.include_router(usage.router, prefix="/api/v1/usage", tags=["usage"])
 
 # Admin routers (require ADMIN role)
+app.include_router(admin_dashboard.router, prefix="/api/v1/admin/dashboard", tags=["admin-dashboard"])
 app.include_router(users.router, prefix="/api/v1/admin/users", tags=["admin-users"])
 app.include_router(admin_organisations.router, prefix="/api/v1/admin/organisations", tags=["admin-organisations"])
 app.include_router(admin_rulebooks.router, prefix="/api/v1/admin/rulebooks", tags=["admin-rulebooks"])
+# app.include_router(admin_health.router, prefix="/api/v1/admin/health", tags=["admin-health"])  # Temporarily disabled
+app.include_router(admin_queue.router, prefix="/api/v1/admin/queue", tags=["admin-queue"])

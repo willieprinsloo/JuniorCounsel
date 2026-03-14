@@ -111,22 +111,22 @@ export default function NewDraftPage() {
     <AppLayout>
       <div className="max-w-2xl mx-auto space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Create New Draft</h1>
-          <p className="mt-1 text-sm text-gray-600">
+          <h1 className="text-2xl font-bold text-foreground">Create New Draft</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Start a new document drafting session for this case.
           </p>
         </div>
 
         {loadingRulebooks ? (
           <div className="text-center py-12">
-            <p className="text-gray-600">Loading document templates...</p>
+            <p className="text-muted-foreground">Loading document templates...</p>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="bg-white shadow rounded-lg">
+          <form onSubmit={handleSubmit} className="bg-card shadow rounded-lg border border-border">
             <div className="px-4 py-5 sm:p-6 space-y-6">
               {/* Title */}
               <div>
-                <label htmlFor="title" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="title" className="block text-sm font-medium text-card-foreground">
                   Draft Title
                 </label>
                 <input
@@ -135,7 +135,7 @@ export default function NewDraftPage() {
                   required
                   value={formData.title}
                   onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                  className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm px-3 py-2 border bg-background text-foreground transition-colors"
                   placeholder="e.g., Founding Affidavit - Application for Divorce"
                   disabled={creating}
                 />
@@ -143,7 +143,7 @@ export default function NewDraftPage() {
 
               {/* Document Type */}
               <div>
-                <label htmlFor="document_type" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="document_type" className="block text-sm font-medium text-card-foreground">
                   Document Type
                 </label>
                 <select
@@ -151,7 +151,7 @@ export default function NewDraftPage() {
                   required
                   value={formData.document_type}
                   onChange={(e) => handleDocumentTypeChange(e.target.value)}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                  className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm px-3 py-2 border bg-background text-foreground transition-colors"
                   disabled={creating}
                 >
                   <option value="">Select a document type...</option>
@@ -166,7 +166,7 @@ export default function NewDraftPage() {
               {/* Jurisdiction */}
               {formData.document_type && (
                 <div>
-                  <label htmlFor="jurisdiction" className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="jurisdiction" className="block text-sm font-medium text-card-foreground">
                     Jurisdiction
                   </label>
                   <select
@@ -174,7 +174,7 @@ export default function NewDraftPage() {
                     required
                     value={formData.jurisdiction}
                     onChange={(e) => handleJurisdictionChange(e.target.value)}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                    className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm px-3 py-2 border bg-background text-foreground transition-colors"
                     disabled={creating}
                   >
                     <option value="">Select a jurisdiction...</option>
@@ -190,7 +190,7 @@ export default function NewDraftPage() {
               {/* Rulebook */}
               {formData.jurisdiction && availableRulebooks.length > 0 && (
                 <div>
-                  <label htmlFor="rulebook_id" className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="rulebook_id" className="block text-sm font-medium text-card-foreground">
                     Template Version
                   </label>
                   <select
@@ -198,7 +198,7 @@ export default function NewDraftPage() {
                     required
                     value={formData.rulebook_id}
                     onChange={(e) => setFormData((prev) => ({ ...prev, rulebook_id: Number(e.target.value) }))}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                    className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm px-3 py-2 border bg-background text-foreground transition-colors"
                     disabled={creating}
                   >
                     <option value={0}>Select a template...</option>
@@ -212,25 +212,25 @@ export default function NewDraftPage() {
               )}
 
               {error && (
-                <div className="rounded-md bg-red-50 p-4">
-                  <p className="text-sm text-red-800">{error}</p>
+                <div className="rounded-md bg-destructive/10 p-4 border border-destructive/20">
+                  <p className="text-sm text-destructive">{error}</p>
                 </div>
               )}
             </div>
 
-            <div className="px-4 py-3 bg-gray-50 text-right sm:px-6 rounded-b-lg space-x-3">
+            <div className="px-4 py-3 bg-muted/50 text-right sm:px-6 rounded-b-lg space-x-3">
               <button
                 type="button"
                 onClick={() => router.push(`/cases/${caseId}`)}
                 disabled={creating}
-                className="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                className="inline-flex justify-center py-2 px-4 border border-border shadow-sm text-sm font-medium rounded-md text-card-foreground bg-card hover:bg-accent disabled:opacity-50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={!isValid || creating}
-                className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-50 transition-colors"
               >
                 {creating ? 'Creating...' : 'Create Draft'}
               </button>

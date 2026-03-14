@@ -99,19 +99,57 @@ async def upload_document_file(
 
     # Create Document record
     doc_repo = DocumentRepository(db)
-    document = doc_repo.create(
-        case_id=case_id,
-        uploaded_by_id=current_user.id,
-        filename=file.filename,
-        upload_session_id=upload_session_id,
-        needs_ocr=needs_ocr
-    )
+    try:
+        document = doc_repo.create(
+            case_id=case_id,
+            uploaded_by_id=current_user.id,
+            filename=file.filename,
+            upload_session_id=upload_session_id,
+            needs_ocr=needs_ocr
+        )
 
-    # Store file path and size in document model
-    document.file_path = file_path
-    document.file_size = file_size
-    db.flush()
-    db.commit()
+        # Store file path and size in document model
+        document.file_path = file_path
+        document.file_size = file_size
+        db.flush()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        # Delete the uploaded file since we couldn't create the database record
+        try:
+            storage.delete_file(file_path)
+        except:
+            pass
+
+        # Check for specific constraint violations
+        error_msg = str(e)
+        if "uq_case_document" in error_msg or "unique constraint" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"A document with the filename '{file.filename}' already exists in this case. Please rename the file or delete the existing document first."
+            )
+        elif "foreign key" in error_msg.lower():
+            if "case_id" in error_msg:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Case with ID '{case_id}' not found. Please check the case ID and try again."
+                )
+            elif "user" in error_msg:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User account not found. Please log in again."
+                )
+            elif "upload_session" in error_msg:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Upload session '{upload_session_id}' not found. Please start a new upload session."
+                )
+
+        # Generic database error
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create document record: {error_msg}"
+        )
 
     # Enqueue processing job (non-blocking)
     try:

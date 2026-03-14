@@ -202,20 +202,20 @@ def process_document_job(document_id: str):
 
         try:
             # Save DocumentChunk records with embeddings
+            # Note: embedding field is commented out in model, skip for now
             for chunk, embedding in zip(chunks, embeddings):
                 doc_chunk = DocumentChunk(
                     document_id=document_id,
-                    chunk_index=chunk["chunk_index"],
-                    content=chunk["content"],
-                    embedding=embedding,  # pgvector handles the conversion
+                    text_content=chunk["content"],
+                    # embedding=embedding,  # TODO: Uncomment when pgvector is enabled in model
                     page_number=chunk.get("page_number", 1),
-                    char_start=chunk.get("char_start"),
-                    char_end=chunk.get("char_end")
+                    paragraph_start=chunk.get("char_start"),
+                    paragraph_end=chunk.get("char_end")
                 )
                 db.add(doc_chunk)
 
             db.flush()
-            logger.info(f"[{document_id}] Saved {len(chunks)} chunks to database")
+            logger.info(f"[{document_id}] Saved {len(chunks)} chunks to database (embeddings not stored yet)")
 
         except Exception as e:
             logger.error(f"[{document_id}] Vector indexing failed: {e}")

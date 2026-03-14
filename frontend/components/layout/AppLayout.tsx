@@ -35,12 +35,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-background transition-colors">
+    <div className="h-screen bg-background transition-colors flex flex-col overflow-hidden">
       <Header />
-      <div className="flex">
+      <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <main className="flex-1 p-6">
-          <div className="mx-auto" style={{ maxWidth: '1700px' }}>
+        <main className="flex-1 p-6 overflow-hidden">
+          <div className="mx-auto h-full" style={{ maxWidth: '1700px' }}>
             {children}
           </div>
         </main>

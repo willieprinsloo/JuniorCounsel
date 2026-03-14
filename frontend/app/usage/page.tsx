@@ -12,6 +12,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { usageAPI, UsageDashboard } from '@/lib/api/usage';
+import { AppLayout } from '@/components/layout/AppLayout';
 
 export default function UsagePage() {
   const router = useRouter();
@@ -43,23 +44,25 @@ export default function UsagePage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading usage data...</p>
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading usage data...</p>
+          </div>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
   if (error) {
     return (
-      <div className="p-8">
+      <AppLayout>
         <div className="bg-destructive/10 text-destructive border border-destructive/20 rounded-lg p-4">
           <h3 className="font-semibold mb-2">Error Loading Usage Data</h3>
           <p>{error}</p>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
@@ -91,13 +94,14 @@ export default function UsagePage() {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-foreground mb-2">Token Usage & Costs</h1>
-        <p className="text-muted-foreground">
-          Last 30 days • Updated in real-time
-        </p>
-      </div>
+    <AppLayout>
+      <div>
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-foreground mb-2">Token Usage & Costs</h1>
+          <p className="text-muted-foreground">
+            Last 30 days • Updated in real-time
+          </p>
+        </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -229,6 +233,7 @@ export default function UsagePage() {
           document processing, Q&A, and draft generation.
         </p>
       </div>
-    </div>
+      </div>
+    </AppLayout>
   );
 }

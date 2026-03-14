@@ -568,7 +568,36 @@ def chat_with_draft(
     current_content = draft_session.draft_doc["content"]
     user_message = message.get("message", "")
     conversation_history = message.get("history", [])  # For future multi-turn support
+    is_first_message = message.get("is_first_message", False)
 
+    # Import draft tools
+    from app.services.draft_tools import DraftTools
+
+    # Check if this is a welcome message request (empty message, first interaction)
+    # Only return welcome message if there's NO actual user message
+    if not user_message and (is_first_message or not conversation_history):
+        # Analyze document and generate welcome message
+        analysis = DraftTools.analyze_document(current_content)
+        welcome_msg = DraftTools.generate_welcome_message(
+            analysis=analysis,
+            document_type=draft_session.document_type or "Draft Document"
+        )
+
+        return {
+            "draft_session_id": str(draft_session_id),
+            "updated_content": current_content,  # No changes
+            "ai_response": welcome_msg,
+            "tools_used": ["analyze_document"],
+            "tool_results": [{
+                "tool": "analyze_document",
+                "result": analysis
+            }],
+            "tokens_used": 0,  # No LLM tokens for welcome
+            "iterations": draft_session.draft_doc.get("chat_iterations", 0),
+            "is_welcome_message": True
+        }
+
+    # Process actual user message
     if not user_message:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -618,6 +647,87 @@ def chat_with_draft(
                     "required": []
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "analyze_document_structure",
+                "description": "Analyze the document structure to understand sections, paragraphs, and organization. Use this before making structural edits to understand the document layout.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "update_section",
+                "description": "Update an entire section of the document by its heading (e.g., 'FACTS', 'LEGAL ARGUMENT'). Use this for major rewrites of a section. SAFER than returning full document.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "section_heading": {
+                            "type": "string",
+                            "description": "The heading of the section to update (e.g., 'FACTS', 'PRAYER')"
+                        },
+                        "new_content": {
+                            "type": "string",
+                            "description": "The new content for this section (numbered paragraphs)"
+                        },
+                        "operation": {
+                            "type": "string",
+                            "enum": ["replace", "append"],
+                            "description": "Whether to replace the entire section or append to it (default: replace)",
+                            "default": "replace"
+                        }
+                    },
+                    "required": ["section_heading", "new_content"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "update_paragraph",
+                "description": "Update a specific paragraph by its number. Use this for targeted edits to individual paragraphs. SAFEST option for small changes.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "paragraph_number": {
+                            "type": "integer",
+                            "description": "The paragraph number to update (e.g., 5)"
+                        },
+                        "new_text": {
+                            "type": "string",
+                            "description": "The new text for this paragraph (number will be added automatically)"
+                        }
+                    },
+                    "required": ["paragraph_number", "new_text"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "insert_paragraph",
+                "description": "Insert a new paragraph after a specified paragraph number. Subsequent paragraphs will be renumbered automatically. Use this to add new facts or arguments.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "after_paragraph": {
+                            "type": "integer",
+                            "description": "Insert after this paragraph number (e.g., 5 will insert as new paragraph 6)"
+                        },
+                        "new_text": {
+                            "type": "string",
+                            "description": "The text for the new paragraph"
+                        }
+                    },
+                    "required": ["after_paragraph", "new_text"]
+                }
+            }
         }
     ]
 
@@ -636,41 +746,75 @@ def chat_with_draft(
 
 **CRITICAL RULES:**
 1. ALWAYS make the changes the user requests - don't just acknowledge or explain
-2. ALWAYS return the COMPLETE updated document with the changes applied
-3. Make substantive changes, not just minor wording tweaks
+2. Use STRUCTURED EDITING TOOLS instead of returning the full document
+3. For small changes: use update_paragraph tool (SAFEST)
+4. For section changes: use update_section tool
+5. For adding content: use insert_paragraph tool
+6. Only return full document as LAST RESORT if tools cannot be used
 
-**Your Capabilities:**
-- Search case documents for facts, evidence, and supporting information (search_case_documents tool)
-- Retrieve the research summary from draft generation (get_research_summary tool)
-- Edit and improve legal document content based on user instructions
+**Your Structured Editing Tools:**
+- **analyze_document_structure**: Understand document layout before editing
+- **update_paragraph**: Change a specific paragraph by number (SAFEST for small edits)
+- **update_section**: Replace or append to entire sections (e.g., FACTS, PRAYER)
+- **insert_paragraph**: Add new paragraphs with automatic renumbering
+- **search_case_documents**: Find facts/evidence in case documents BEFORE editing
+- **get_research_summary**: Get case context and legal issues
 
 **How to Respond:**
-1. Read the user's request carefully
-2. If they ask to add/find information → use search_case_documents tool FIRST
-3. If you need case context → use get_research_summary tool
-4. Make the requested changes to the draft
-5. Return the COMPLETE updated draft with changes applied
+1. If unsure about document structure → use analyze_document_structure FIRST
+2. If user asks to add information → search_case_documents FIRST to find facts
+3. If user requests fact-checking → search_case_documents to verify
+4. For targeted changes → use update_paragraph or insert_paragraph
+5. For major section rewrites → use update_section
+6. After using tools → provide brief confirmation of changes made
 
 **Editing Guidelines:**
 - Maintain formal South African legal register
-- Keep document structure (headings in CAPITALS, numbered paragraphs)
-- Preserve existing citation markers [1], [2], etc.
-- Add new citations [N] when adding information from sources
-- Make meaningful, substantive changes based on the user's request
-- Don't just explain what you'll do - actually do it and return the updated document"""
+- Preserve document structure (headings in CAPITALS, numbered paragraphs)
+- Preserve citation markers [1], [2], etc. - add new ones [N] when needed
+- Always verify facts with search_case_documents before adding claims
+- Use tools for safety - they prevent accidental document corruption
+- Be concise in responses - the tools make the changes, you just confirm
+
+**Example Workflow:**
+User: "Update paragraph 5 to mention the contract was signed on 15 June 2023"
+You:
+1. search_case_documents(query="contract signed date June 2023")
+2. update_paragraph(paragraph_number=5, new_text="The parties entered into a written agreement on 15 June 2023 [1], whereby...")
+3. Respond: "✓ Updated paragraph 5 with contract date. Added citation [1] from signed agreement."
+
+User: "Add a paragraph about the defendant's breach"
+You:
+1. search_case_documents(query="defendant breach contract obligations")
+2. analyze_document_structure() [to know where to insert]
+3. insert_paragraph(after_paragraph=10, new_text="The Defendant breached the agreement by...")
+4. Respond: "✓ Inserted new paragraph 11 describing breach. Found supporting evidence in case documents."
+
+DO NOT return the full document unless absolutely necessary. Use the tools."""
 
     # Build conversation messages
     messages = [
         {"role": "system", "content": system_message},
-        {"role": "user", "content": f"""**Current Draft Content:**
-{current_content}
+        {"role": "user", "content": f"""**Current Draft (FOR REFERENCE ONLY - USE TOOLS TO EDIT):**
+```
+{current_content[:3000]}{"..." if len(current_content) > 3000 else ""}
+```
 
-**Research Summary Available:** {'Yes' if draft_session.research_summary else 'No'}
+**Document Information:**
+- Document Type: {draft_session.document_type or 'Draft Document'}
+- Title: {draft_session.title}
+- Total Length: {len(current_content.split())} words
+- Research Summary: {'Available' if draft_session.research_summary else 'Not available'}
 
 **User Request:**
 {user_message}
 
-Please help improve the draft based on this request."""}
+**IMPORTANT:**
+- Use analyze_document_structure() to understand layout if needed
+- Use search_case_documents() to verify facts BEFORE editing
+- Use update_paragraph() / insert_paragraph() / update_section() to make changes
+- DO NOT return the full document in your response - just confirm changes
+- The tools will handle the actual editing safely"""}
     ]
 
     try:
@@ -686,6 +830,10 @@ Please help improve the draft based on this request."""}
         tool_results = []
         tools_used = []
 
+        # Track document changes made by tools
+        document_modified = False
+        modification_reports = []
+
         # Execute any tool calls
         if tool_calls:
             for tool_call in tool_calls:
@@ -693,7 +841,125 @@ Please help improve the draft based on this request."""}
                 function_args = json.loads(tool_call["function"]["arguments"])
                 tools_used.append(function_name)
 
-                if function_name == "search_case_documents":
+                if function_name == "analyze_document_structure":
+                    # Analyze document structure
+                    analysis = DraftTools.analyze_document(current_content)
+
+                    tool_results.append({
+                        "tool": "analyze_document_structure",
+                        "result": analysis
+                    })
+
+                    messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [tool_call]
+                    })
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call["id"],
+                        "content": json.dumps(analysis)
+                    })
+
+                elif function_name == "update_paragraph":
+                    # Update specific paragraph
+                    para_num = function_args.get("paragraph_number")
+                    new_text = function_args.get("new_text", "")
+
+                    updated_content, report = DraftTools.update_paragraph(
+                        content=current_content,
+                        paragraph_number=para_num,
+                        new_text=new_text
+                    )
+
+                    if report.get("success"):
+                        current_content = updated_content
+                        document_modified = True
+                        modification_reports.append(report)
+
+                    tool_results.append({
+                        "tool": "update_paragraph",
+                        "result": report
+                    })
+
+                    messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [tool_call]
+                    })
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call["id"],
+                        "content": json.dumps(report)
+                    })
+
+                elif function_name == "update_section":
+                    # Update entire section
+                    section_heading = function_args.get("section_heading", "")
+                    new_content_text = function_args.get("new_content", "")
+                    operation = function_args.get("operation", "replace")
+
+                    updated_content, report = DraftTools.update_section(
+                        content=current_content,
+                        section_heading=section_heading,
+                        new_content=new_content_text,
+                        operation=operation
+                    )
+
+                    if report.get("success"):
+                        current_content = updated_content
+                        document_modified = True
+                        modification_reports.append(report)
+
+                    tool_results.append({
+                        "tool": "update_section",
+                        "result": report
+                    })
+
+                    messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [tool_call]
+                    })
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call["id"],
+                        "content": json.dumps(report)
+                    })
+
+                elif function_name == "insert_paragraph":
+                    # Insert new paragraph
+                    after_para = function_args.get("after_paragraph")
+                    new_text = function_args.get("new_text", "")
+
+                    updated_content, report = DraftTools.insert_paragraph(
+                        content=current_content,
+                        after_paragraph=after_para,
+                        new_text=new_text
+                    )
+
+                    if report.get("success"):
+                        current_content = updated_content
+                        document_modified = True
+                        modification_reports.append(report)
+
+                    tool_results.append({
+                        "tool": "insert_paragraph",
+                        "result": report
+                    })
+
+                    messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [tool_call]
+                    })
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call["id"],
+                        "content": json.dumps(report)
+                    })
+
+                elif function_name == "search_case_documents":
                     # Perform vector search on document chunks
                     query = function_args.get("query", "")
                     limit = function_args.get("limit", 5)
@@ -777,14 +1043,25 @@ Please help improve the draft based on this request."""}
             output_tokens += final_output_tokens
             content = final_content
 
-        # Extract updated draft from response
-        # The LLM should return the complete draft in its response
-        updated_content = content
+        # Determine final content
+        # If tools modified the document, use current_content
+        # Otherwise, check if AI returned full document in content
+        if document_modified:
+            updated_content = current_content
+        else:
+            # Legacy behavior: AI might return full document (discouraged now)
+            updated_content = content if content and len(content) > 500 else current_content
 
         # Update draft_doc with new content
         draft_session.draft_doc["content"] = updated_content
         draft_session.draft_doc["chat_iterations"] = draft_session.draft_doc.get("chat_iterations", 0) + 1
         draft_session.draft_doc["last_chat_at"] = __import__('datetime').datetime.utcnow().isoformat()
+
+        # Track modification reports
+        if modification_reports:
+            if "modification_history" not in draft_session.draft_doc:
+                draft_session.draft_doc["modification_history"] = []
+            draft_session.draft_doc["modification_history"].extend(modification_reports)
 
         db.flush()
         db.commit()
@@ -796,7 +1073,9 @@ Please help improve the draft based on this request."""}
             "tools_used": tools_used,
             "tool_results": tool_results,
             "tokens_used": input_tokens + output_tokens,
-            "iterations": draft_session.draft_doc.get("chat_iterations", 1)
+            "iterations": draft_session.draft_doc.get("chat_iterations", 1),
+            "document_modified": document_modified,
+            "modifications": modification_reports
         }
 
     except Exception as e:
@@ -1046,4 +1325,90 @@ def export_draft_to_docx(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate DOCX: {str(e)}"
+        )
+
+
+@router.get("/{draft_session_id}/export/markdown")
+def export_draft_to_markdown(
+    draft_session_id: str,
+    citation_format: Literal["endnotes", "inline", "none"] = Query("endnotes", description="Citation format"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Export draft session to Markdown (.md) format.
+
+    Returns Markdown-formatted document with proper structure.
+    Supports different citation formats:
+    - endnotes: Citations as references at end of document
+    - inline: Citations inline within text
+    - none: Remove all citation markers
+
+    Requires authentication.
+
+    Args:
+        draft_session_id: Draft session ID (UUID)
+        citation_format: Citation formatting mode (default: endnotes)
+        db: Database session
+        current_user: Current authenticated user
+
+    Returns:
+        Markdown file download (text/markdown)
+
+    Raises:
+        HTTPException: If draft session not found (404)
+        HTTPException: If draft not ready for export (400)
+    """
+    draft_repo = DraftSessionRepository(db)
+    draft_session = draft_repo.get_by_id(draft_session_id)
+
+    if not draft_session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Draft session not found"
+        )
+
+    # Validate draft has been generated
+    if draft_session.status not in [
+        DraftSessionStatusEnum.REVIEW,
+        DraftSessionStatusEnum.READY
+    ]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Draft not ready for export. Current status: {draft_session.status}. "
+                   f"Draft must be in REVIEW or READY status."
+        )
+
+    # Validate draft_doc exists
+    if not draft_session.draft_doc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Draft content not available. Please regenerate the draft."
+        )
+
+    # Generate Markdown
+    export_service = DraftExportService()
+
+    try:
+        md_buffer = export_service.export_to_markdown(
+            draft_doc=draft_session.draft_doc,
+            document_type=draft_session.document_type,
+            title=draft_session.title,
+            citation_format=citation_format
+        )
+
+        # Create safe filename
+        safe_title = draft_session.title.replace(" ", "_").replace("/", "_")[:50]
+        filename = f"{safe_title}.md"
+
+        return StreamingResponse(
+            md_buffer,
+            media_type="text/markdown",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate Markdown: {str(e)}"
         )

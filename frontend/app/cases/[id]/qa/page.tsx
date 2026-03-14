@@ -10,23 +10,14 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { qaAPI, chatSessionsAPI } from '@/lib/api/services';
+import { ChatBox, ChatMessage as ChatBoxMessage } from '@/components/chat/ChatBox';
 import type { QAResponse, ChatMessage, ChatSession } from '@/types/api';
-
-interface QAHistory {
-  id?: string;
-  question: string;
-  answer: string;
-  sources: QAResponse['sources'];
-  confidence: number;
-  timestamp: Date;
-}
 
 export default function CaseQAPage() {
   const params = useParams();
   const caseId = params.id as string;
 
-  const [question, setQuestion] = useState('');
-  const [history, setHistory] = useState<QAHistory[]>([]);
+  const [messages, setMessages] = useState<ChatBoxMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingSession, setLoadingSession] = useState(true);
   const [error, setError] = useState('');
@@ -52,16 +43,24 @@ export default function CaseQAPage() {
 
           // Load conversation history from the session
           const sessionDetail = await chatSessionsAPI.get(latestSession.id);
-          const loadedHistory: QAHistory[] = sessionDetail.messages.map((msg) => ({
-            id: msg.id,
-            question: msg.question,
-            answer: msg.answer,
-            sources: msg.sources || [],
-            confidence: msg.confidence,
-            timestamp: new Date(msg.created_at),
-          })).reverse(); // Reverse to show newest first
+          const loadedMessages: ChatBoxMessage[] = sessionDetail.messages.flatMap((msg) => [
+            {
+              id: `${msg.id}-question`,
+              role: 'user' as const,
+              content: msg.question,
+              timestamp: new Date(msg.created_at),
+            },
+            {
+              id: `${msg.id}-answer`,
+              role: 'assistant' as const,
+              content: msg.answer,
+              timestamp: new Date(msg.created_at),
+              sources: msg.sources || [],
+              confidence: msg.confidence,
+            },
+          ]);
 
-          setHistory(loadedHistory);
+          setMessages(loadedMessages);
         } else {
           // Create a new session
           const newSession = await chatSessionsAPI.create({
@@ -82,38 +81,50 @@ export default function CaseQAPage() {
     initializeSession();
   }, [caseId]);
 
-  const handleAsk = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!question.trim()) return;
-
+  const handleSendMessage = async (message: string) => {
     setLoading(true);
     setError('');
+
+    // Add user message immediately
+    const userMessage: ChatBoxMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: message,
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, userMessage]);
 
     try {
       // Pass chat session ID to save the message to the backend
       const response = await qaAPI.ask(
         {
           case_id: caseId,
-          question: question.trim(),
+          question: message,
           limit: 5,
         },
         currentSession?.id // Pass session ID for persistence
       );
 
-      setHistory((prev) => [
-        {
-          question: question.trim(),
-          answer: response.answer,
-          sources: response.sources,
-          confidence: response.confidence,
-          timestamp: new Date(),
-        },
-        ...prev,
-      ]);
-
-      setQuestion('');
+      // Add assistant response
+      const assistantMessage: ChatBoxMessage = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: response.answer,
+        sources: response.sources,
+        confidence: response.confidence,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to get answer');
+      // Add error message
+      const errorMessage: ChatBoxMessage = {
+        id: `error-${Date.now()}`,
+        role: 'assistant',
+        content: 'Sorry, I encountered an error processing your question. Please try again.',
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setLoading(false);
     }
@@ -128,17 +139,11 @@ export default function CaseQAPage() {
       });
       setCurrentSession(newSession);
       setSessions((prev) => [newSession, ...prev]);
-      setHistory([]);
+      setMessages([]);
       setError('');
     } catch (err) {
       setError('Failed to create new session');
     }
-  };
-
-  const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 0.8) return 'bg-success/10 text-success border border-success/20';
-    if (confidence >= 0.6) return 'bg-secondary/10 text-secondary border border-secondary/20';
-    return 'bg-destructive/10 text-destructive border border-destructive/20';
   };
 
   return (
@@ -185,43 +190,13 @@ export default function CaseQAPage() {
                 <div>
                   <p className="text-sm font-medium text-foreground">{currentSession.title}</p>
                   <p className="text-xs text-muted-foreground">
-                    {history.length} message{history.length !== 1 ? 's' : ''} • Session saved automatically
+                    {messages.length} message{messages.length !== 1 ? 's' : ''} • Session saved automatically
                   </p>
                 </div>
               </div>
             </div>
           </div>
         ) : null}
-
-        {/* Question Form */}
-        <form onSubmit={handleAsk} className="bg-card shadow rounded-lg p-6">
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="question" className="block text-sm font-medium text-card-foreground mb-2">
-                Your Question
-              </label>
-              <textarea
-                id="question"
-                rows={3}
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                className="block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm px-3 py-2 border bg-background text-foreground transition-colors"
-                placeholder="e.g., What are the key facts in the plaintiff's founding affidavit?"
-                disabled={loading || loadingSession}
-              />
-            </div>
-
-            <div>
-              <button
-                type="submit"
-                disabled={loading || loadingSession || !question.trim()}
-                className="w-full inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-50 transition-colors"
-              >
-                {loading ? 'Thinking...' : loadingSession ? 'Loading session...' : 'Ask Question'}
-              </button>
-            </div>
-          </div>
-        </form>
 
         {/* Error Message */}
         {error && (
@@ -230,130 +205,17 @@ export default function CaseQAPage() {
           </div>
         )}
 
-        {/* Q&A History */}
-        {history.length > 0 && (
-          <div className="space-y-6">
-            <h2 className="text-lg font-medium text-foreground">Conversation History</h2>
-
-            {history.map((item, index) => (
-              <div key={index} className="bg-card shadow rounded-lg overflow-hidden border border-border">
-                {/* Question */}
-                <div className="bg-primary/10 px-4 py-3">
-                  <div className="flex items-start">
-                    <div className="flex-shrink-0">
-                      <svg
-                        className="h-6 w-6 text-primary"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
-                    </div>
-                    <div className="ml-3 flex-1">
-                      <p className="text-sm font-medium text-foreground">{item.question}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {item.timestamp.toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Answer */}
-                <div className="px-4 py-4">
-                  <div className="flex items-start mb-3">
-                    <div className="flex-shrink-0">
-                      <svg
-                        className="h-6 w-6 text-success"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
-                    </div>
-                    <div className="ml-3 flex-1">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-foreground">Answer</span>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getConfidenceColor(item.confidence)}`}>
-                          {(item.confidence * 100).toFixed(0)}% confidence
-                        </span>
-                      </div>
-                      <p className="text-sm text-card-foreground whitespace-pre-wrap">{item.answer}</p>
-                    </div>
-                  </div>
-
-                  {/* Sources */}
-                  {item.sources.length > 0 && (
-                    <div className="mt-4 border-t border-border pt-4">
-                      <h4 className="text-sm font-medium text-foreground mb-3">
-                        Sources ({item.sources.length})
-                      </h4>
-                      <ul className="space-y-3">
-                        {item.sources.map((source, sourceIndex) => (
-                          <li key={sourceIndex} className="text-sm">
-                            <div className="flex items-start">
-                              <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-muted text-card-foreground text-xs font-medium flex-shrink-0">
-                                {sourceIndex + 1}
-                              </span>
-                              <div className="ml-3 flex-1">
-                                <div className="flex items-center space-x-2 mb-1">
-                                  <span className="font-medium text-foreground">
-                                    {source.document_filename}
-                                  </span>
-                                  {source.page_number && (
-                                    <span className="text-muted-foreground">
-                                      Page {source.page_number}
-                                    </span>
-                                  )}
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-muted text-card-foreground border border-border">
-                                    {(source.similarity * 100).toFixed(1)}% match
-                                  </span>
-                                </div>
-                                <p className="text-muted-foreground">{source.content}</p>
-                              </div>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {history.length === 0 && !loading && (
-          <div className="text-center py-12 bg-card rounded-lg shadow border border-border">
-            <svg
-              className="mx-auto h-12 w-12 text-muted-foreground"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-              />
-            </svg>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Ask a question to get started. Your answers will appear here with source citations.
-            </p>
-          </div>
-        )}
+        {/* Professional Chat Interface */}
+        <ChatBox
+          messages={messages}
+          onSendMessage={handleSendMessage}
+          isLoading={loading}
+          placeholder="Ask a question about your case documents..."
+          welcomeMessage="Hi! I'm your AI legal assistant. I can help you find information in your case documents and answer questions about your case. What would you like to know?"
+          enableMarkdown={true}
+          showTimestamps={true}
+          maxHeight="600px"
+        />
       </div>
     </AppLayout>
   );

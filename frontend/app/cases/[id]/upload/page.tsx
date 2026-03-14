@@ -95,7 +95,7 @@ export default function UploadDocumentsPage() {
 
   return (
     <AppLayout>
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Upload Documents</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -104,11 +104,11 @@ export default function UploadDocumentsPage() {
         </div>
 
         {/* Background Processing Info */}
-        <div className="rounded-md bg-blue-50 dark:bg-blue-950/30 p-4 border border-blue-200 dark:border-blue-900">
+        <div className="rounded-md bg-primary/5 p-4 border border-primary/20">
           <div className="flex">
             <div className="flex-shrink-0">
               <svg
-                className="h-5 w-5 text-blue-400"
+                className="h-5 w-5 text-primary"
                 viewBox="0 0 20 20"
                 fill="currentColor"
               >
@@ -120,10 +120,10 @@ export default function UploadDocumentsPage() {
               </svg>
             </div>
             <div className="ml-3 flex-1">
-              <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">
+              <h3 className="text-sm font-medium text-foreground">
                 Documents will be processed in the background
               </h3>
-              <div className="mt-2 text-sm text-blue-700 dark:text-blue-300">
+              <div className="mt-2 text-sm text-muted-foreground">
                 <p>
                   After upload, your documents will be queued for processing (OCR, text extraction, and indexing).
                   You can safely leave this page and return later - processing continues in the background.

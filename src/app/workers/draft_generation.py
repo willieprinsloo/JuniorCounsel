@@ -55,10 +55,19 @@ def draft_research_job(draft_session_id: str):
         draft_repo = DraftSessionRepository(db)
         rulebook_repo = RulebookRepository(db)
 
-        # Get draft session
-        draft = draft_repo.get_by_id(draft_session_id)
+        # Get draft session with retry logic (handle race condition with API commit)
+        import time
+        draft = None
+        for attempt in range(3):
+            draft = draft_repo.get_by_id(draft_session_id)
+            if draft:
+                break
+            if attempt < 2:
+                logger.warning(f"[{draft_session_id}] Draft not found on attempt {attempt + 1}, retrying...")
+                time.sleep(0.5)  # Wait 500ms before retry
+
         if not draft:
-            raise ValueError(f"DraftSession {draft_session_id} not found")
+            raise ValueError(f"DraftSession {draft_session_id} not found after 3 attempts")
 
         logger.info(f"Starting research for draft {draft_session_id}: {draft.title}")
 
@@ -71,6 +80,12 @@ def draft_research_job(draft_session_id: str):
         draft.status = DraftSessionStatusEnum.RESEARCH
         db.flush()
         db.commit()
+
+        # Get case information for organisation_id
+        from app.persistence.models import Case
+        case = db.query(Case).filter(Case.id == draft.case_id).first()
+        if not case:
+            raise ValueError(f"Case {draft.case_id} not found")
 
         # Extract search queries using RulebookService
         rulebook_service = RulebookService(db)
@@ -98,8 +113,8 @@ def draft_research_job(draft_session_id: str):
                     model=embedding_result.model,
                     input_tokens=embedding_result.input_tokens,
                     output_tokens=0,  # Embeddings don't have output tokens
-                    organisation_id=draft.organisation_id,
-                    user_id=draft.created_by_id if hasattr(draft, 'created_by_id') else None,
+                    organisation_id=case.organisation_id,
+                    user_id=draft.user_id,
                     case_id=draft.case_id,
                     resource_type="draft_session",
                     resource_id=str(draft_session_id)
@@ -217,10 +232,19 @@ def draft_generation_job(draft_session_id: str):
         draft_repo = DraftSessionRepository(db)
         rulebook_repo = RulebookRepository(db)
 
-        # Get draft session
-        draft = draft_repo.get_by_id(draft_session_id)
+        # Get draft session with retry logic (handle race condition with API commit)
+        import time
+        draft = None
+        for attempt in range(3):
+            draft = draft_repo.get_by_id(draft_session_id)
+            if draft:
+                break
+            if attempt < 2:
+                logger.warning(f"[{draft_session_id}] Draft not found on attempt {attempt + 1}, retrying...")
+                time.sleep(0.5)  # Wait 500ms before retry
+
         if not draft:
-            raise ValueError(f"DraftSession {draft_session_id} not found")
+            raise ValueError(f"DraftSession {draft_session_id} not found after 3 attempts")
 
         logger.info(f"Starting generation for draft {draft_session_id}: {draft.title}")
 
@@ -229,16 +253,42 @@ def draft_generation_job(draft_session_id: str):
         if not rulebook:
             raise ValueError(f"Rulebook {draft.rulebook_id} not found")
 
+        # Get case information for context
+        from app.persistence.models import Case
+        case = db.query(Case).filter(Case.id == draft.case_id).first()
+        if not case:
+            raise ValueError(f"Case {draft.case_id} not found")
+
         # Ensure we're in drafting status
         if draft.status != DraftSessionStatusEnum.DRAFTING:
             raise ValueError(f"Draft {draft_session_id} not in drafting status (current: {draft.status})")
 
-        # Build drafting prompt
+        # Build comprehensive case context
+        case_context = {
+            "title": case.title,
+            "case_type": case.case_type,
+            "jurisdiction": case.jurisdiction,
+            "description": case.description,
+            "metadata": case.case_metadata or {},
+            "documents": [
+                {
+                    "id": str(doc.id),
+                    "filename": doc.filename,
+                    "document_type": doc.document_type.value if hasattr(doc.document_type, 'value') else doc.document_type,
+                    "pages": doc.pages
+                }
+                for doc in case.documents
+                if doc.overall_status == DocumentStatusEnum.COMPLETED
+            ]
+        }
+
+        # Build drafting prompt with case context
         prompt = build_drafting_prompt(
             rulebook=rulebook,
             intake_responses=draft.intake_responses,
             research_summary=draft.research_summary,
-            document_type=draft.document_type
+            document_type=draft.document_type,
+            case_context=case_context
         )
 
         # Get LLM configuration from rulebook
@@ -264,8 +314,8 @@ def draft_generation_job(draft_session_id: str):
             model=generation_result.model,
             input_tokens=generation_result.input_tokens,
             output_tokens=generation_result.output_tokens,
-            organisation_id=draft.organisation_id,
-            user_id=draft.created_by_id if hasattr(draft, 'created_by_id') else None,
+            organisation_id=case.organisation_id,
+            user_id=draft.user_id,
             case_id=draft.case_id,
             resource_type="draft_session",
             resource_id=str(draft_session_id)
@@ -275,6 +325,9 @@ def draft_generation_job(draft_session_id: str):
 
         # Extract citations from generated content
         citations_list = extract_citations_from_content(generated_content, draft.research_summary)
+
+        # Merge draft back into session to avoid StaleDataError (session may have expired during long LLM generation)
+        draft = db.merge(draft)
 
         # Save draft document in JSONB
         draft.draft_doc = {
@@ -396,7 +449,8 @@ def build_drafting_prompt(
     rulebook: Any,
     intake_responses: Dict[str, Any],
     research_summary: Dict[str, Any],
-    document_type: str
+    document_type: str,
+    case_context: Optional[Dict[str, Any]] = None
 ) -> str:
     """
     Build LLM prompt for draft generation using rulebook templates.
@@ -411,6 +465,7 @@ def build_drafting_prompt(
         intake_responses: User's intake answers
         research_summary: RAG research results
         document_type: Type of document to generate
+        case_context: Optional case information (title, type, jurisdiction, description, documents)
 
     Returns:
         Complete prompt for LLM
@@ -434,6 +489,31 @@ def build_drafting_prompt(
             intake_lines.append(f"- {k}: {v}")
     intake_text = "\n".join(intake_lines)
 
+    # Format case context if provided
+    case_info_text = ""
+    if case_context:
+        case_info_text = f"""**CASE CONTEXT:**
+- Case Title: {case_context.get('title', 'N/A')}
+- Case Type: {case_context.get('case_type', 'N/A')}
+- Jurisdiction: {case_context.get('jurisdiction', 'N/A')}
+- Description: {case_context.get('description', 'N/A')}"""
+
+        # Add document list if available
+        documents = case_context.get('documents', [])
+        if documents:
+            case_info_text += "\n- Documents on file:\n"
+            for doc in documents:
+                case_info_text += f"  • {doc['filename']} ({doc.get('document_type', 'unknown')}, {doc.get('pages', 'N/A')} pages)\n"
+
+        # Add metadata if available
+        metadata = case_context.get('metadata', {})
+        if metadata:
+            case_info_text += "\n- Additional case metadata:\n"
+            for key, value in metadata.items():
+                case_info_text += f"  • {key}: {value}\n"
+
+        case_info_text += "\n"
+
     # Format research excerpts with citations
     excerpts = research_summary.get("key_excerpts", [])[:20]  # Use up to 20 excerpts
     excerpts_text = ""
@@ -446,10 +526,11 @@ def build_drafting_prompt(
     # Build comprehensive prompt
     prompt = f"""You are drafting a {document_type} for South African High Court proceedings.
 
+{case_info_text}
 **DOCUMENT STRUCTURE (Required Sections):**
 {structure_text}
 
-**CASE INFORMATION (From intake questions):**
+**INTAKE INFORMATION (User responses to case-specific questions):**
 {intake_text}
 
 **SUPPORTING EVIDENCE (From case documents - cite using [N] format):**

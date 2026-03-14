@@ -80,14 +80,26 @@ class TokenUsageRepository:
         """
         Calculate estimated cost in USD based on current API pricing.
 
-        Pricing as of 2024 (per 1M tokens):
-        - OpenAI gpt-4-turbo: $10 input, $30 output
-        - OpenAI gpt-4: $30 input, $60 output
-        - OpenAI gpt-3.5-turbo: $0.50 input, $1.50 output
-        - OpenAI text-embedding-3-small: $0.02 input
-        - Anthropic claude-3-opus: $15 input, $75 output
-        - Anthropic claude-3-sonnet: $3 input, $15 output
-        - Anthropic claude-3-haiku: $0.25 input, $1.25 output
+        Pricing as of January 2025 (per 1M tokens):
+
+        OpenAI:
+        - gpt-4o: $2.50 input, $10.00 output
+        - gpt-4o-mini: $0.15 input, $0.60 output
+        - gpt-4-turbo: $10 input, $30 output
+        - gpt-4: $30 input, $60 output
+        - gpt-3.5-turbo: $0.50 input, $1.50 output
+        - o1-preview: $15 input, $60 output (reasoning model)
+        - o1-mini: $3 input, $12 output (reasoning model)
+        - text-embedding-3-small: $0.02 input
+        - text-embedding-3-large: $0.13 input
+
+        Anthropic:
+        - claude-opus-4-20250514: $15 input, $75 output (Claude 4 Opus)
+        - claude-sonnet-4-20250514: $3 input, $15 output (Claude 4 Sonnet)
+        - claude-3-5-sonnet-20241022: $3 input, $15 output (Claude 3.5 Sonnet)
+        - claude-3-opus-20240229: $15 input, $75 output
+        - claude-3-sonnet-20240229: $3 input, $15 output
+        - claude-3-haiku-20240307: $0.25 input, $1.25 output
 
         Args:
             provider: Provider name
@@ -100,22 +112,53 @@ class TokenUsageRepository:
         """
         pricing = {
             "openai": {
+                # Latest models (2024-2025)
+                "gpt-4o": {"input": 2.50, "output": 10.00},
+                "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+                "gpt-4o-2024-11-20": {"input": 2.50, "output": 10.00},
+                "gpt-4o-2024-08-06": {"input": 2.50, "output": 10.00},
+                "gpt-4o-mini-2024-07-18": {"input": 0.15, "output": 0.60},
+                # Reasoning models
+                "o1-preview": {"input": 15.00, "output": 60.00},
+                "o1-preview-2024-09-12": {"input": 15.00, "output": 60.00},
+                "o1-mini": {"input": 3.00, "output": 12.00},
+                "o1-mini-2024-09-12": {"input": 3.00, "output": 12.00},
+                # GPT-4 Turbo
                 "gpt-4-turbo": {"input": 10.00, "output": 30.00},
                 "gpt-4-turbo-preview": {"input": 10.00, "output": 30.00},
+                "gpt-4-turbo-2024-04-09": {"input": 10.00, "output": 30.00},
+                # GPT-4 (older)
                 "gpt-4": {"input": 30.00, "output": 60.00},
+                "gpt-4-0613": {"input": 30.00, "output": 60.00},
+                # GPT-3.5
                 "gpt-3.5-turbo": {"input": 0.50, "output": 1.50},
+                "gpt-3.5-turbo-0125": {"input": 0.50, "output": 1.50},
+                # Embeddings
                 "text-embedding-3-small": {"input": 0.02, "output": 0.0},
                 "text-embedding-3-large": {"input": 0.13, "output": 0.0},
                 "text-embedding-ada-002": {"input": 0.10, "output": 0.0},
             },
             "anthropic": {
+                # Claude 4 (2025)
+                "claude-opus-4-20250514": {"input": 15.00, "output": 75.00},
+                "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00},
+                "claude-4-opus": {"input": 15.00, "output": 75.00},  # Alias
+                "claude-4-sonnet": {"input": 3.00, "output": 15.00},  # Alias
+                # Claude 3.5 (2024)
+                "claude-3-5-sonnet-20241022": {"input": 3.00, "output": 15.00},
+                "claude-3-5-sonnet-20240620": {"input": 3.00, "output": 15.00},
+                "claude-3-5-sonnet": {"input": 3.00, "output": 15.00},  # Alias
+                # Claude 3 (2024)
                 "claude-3-opus-20240229": {"input": 15.00, "output": 75.00},
                 "claude-3-sonnet-20240229": {"input": 3.00, "output": 15.00},
                 "claude-3-haiku-20240307": {"input": 0.25, "output": 1.25},
-                # Aliases without version suffixes
-                "claude-3-opus": {"input": 15.00, "output": 75.00},
-                "claude-3-sonnet": {"input": 3.00, "output": 15.00},
-                "claude-3-haiku": {"input": 0.25, "output": 1.25},
+                "claude-3-opus": {"input": 15.00, "output": 75.00},  # Alias
+                "claude-3-sonnet": {"input": 3.00, "output": 15.00},  # Alias
+                "claude-3-haiku": {"input": 0.25, "output": 1.25},  # Alias
+            },
+            "stub": {
+                # Stub provider for development/testing - use ada-002 pricing as reference
+                "stub-embeddings-1536": {"input": 0.10, "output": 0.0},
             },
         }
 
@@ -133,6 +176,8 @@ class TokenUsageRepository:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         usage_type: Optional[TokenUsageTypeEnum] = None,
+        resource_type: Optional[str] = None,
+        resource_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Get aggregated usage summary.
@@ -144,6 +189,8 @@ class TokenUsageRepository:
             start_date: Start date (inclusive)
             end_date: End date (inclusive)
             usage_type: Filter by usage type
+            resource_type: Filter by resource type (document, draft_session, etc.)
+            resource_id: Filter by specific resource ID
 
         Returns:
             Dict with aggregated metrics
@@ -168,6 +215,10 @@ class TokenUsageRepository:
             query = query.where(TokenUsage.created_at <= end_date)
         if usage_type is not None:
             query = query.where(TokenUsage.usage_type == usage_type)
+        if resource_type is not None:
+            query = query.where(TokenUsage.resource_type == resource_type)
+        if resource_id is not None:
+            query = query.where(TokenUsage.resource_id == resource_id)
 
         result = self.session.execute(query).first()
 

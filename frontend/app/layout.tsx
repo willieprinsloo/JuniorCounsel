@@ -1,21 +1,27 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, EB_Garamond } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth/context";
+import { ThemeProvider } from "@/lib/theme/context";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
+  display: 'swap',
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const ebGaramond = EB_Garamond({
+  variable: "--font-eb-garamond",
   subsets: ["latin"],
+  display: 'swap',
 });
 
 export const metadata: Metadata = {
-  title: "Junior Counsel - Legal Document Processing",
+  title: "Junior Counsel",
   description: "AI-powered legal document drafting for South African litigation",
+  icons: {
+    icon: '/Junior-Counsel-Favicon.svg',
+  },
 };
 
 export default function RootLayout({
@@ -24,13 +30,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="preload" as="image" href="/logo-no-text.svg" />
+      </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${inter.variable} ${ebGaramond.variable} font-sans antialiased`}
+        style={{ fontFamily: 'Inter, sans-serif' }}
       >
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -39,7 +39,7 @@ class OrganisationMembershipResponse(BaseModel):
     organisation_id: int
     organisation_name: str
     role: OrganisationRoleEnum
-    joined_at: datetime
+    joined_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -90,7 +90,7 @@ class OrganisationMemberResponse(BaseModel):
     email: str
     full_name: Optional[str] = None
     role: OrganisationRoleEnum
-    joined_at: datetime
+    joined_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

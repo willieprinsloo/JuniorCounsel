@@ -199,3 +199,26 @@ def get_usage_dashboard(
         start_date=start_date,
         end_date=end_date
     )
+
+
+@router.get("/document/{document_id}", response_model=UsageSummaryResponse)
+def get_document_usage(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get token usage for a specific document.
+
+    Returns aggregated tokens and costs for all processing stages
+    (text extraction, embeddings, classification) of a document.
+    """
+    token_repo = TokenUsageRepository(db)
+
+    # Get usage for this specific document
+    summary = token_repo.get_usage_summary(
+        resource_type="document",
+        resource_id=document_id
+    )
+
+    return UsageSummaryResponse(**summary)

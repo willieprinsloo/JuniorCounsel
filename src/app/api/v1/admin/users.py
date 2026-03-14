@@ -56,26 +56,10 @@ def list_users(
     )
 
     # For each user, load their organisation memberships
-    org_user_repo = OrganisationUserRepository(db)
     user_responses = []
 
     for user in users:
-        # Get user's organisation memberships
-        stmt = db.query(
-            org_user_repo.session.query(
-                org_user_repo.session.get_bind().execute(
-                    f"""
-                    SELECT ou.organisation_id, o.name, ou.role, ou.created_at
-                    FROM organisation_users ou
-                    JOIN organisations o ON ou.organisation_id = o.id
-                    WHERE ou.user_id = {user.id}
-                    ORDER BY ou.created_at DESC
-                    """
-                )
-            )
-        )
-
-        # Simple approach: use existing relationships
+        # Load organisation memberships using repository method
         memberships = []
         user_with_orgs = user_repo.get_with_organisations(user.id)
         if user_with_orgs and user_with_orgs.organisations:
@@ -85,7 +69,7 @@ def list_users(
                         organisation_id=org_user.organisation.id,
                         organisation_name=org_user.organisation.name,
                         role=org_user.role,
-                        joined_at=org_user.created_at,
+                        joined_at=None,  # OrganisationUser doesn't have timestamps
                     )
                 )
 
@@ -139,7 +123,7 @@ def get_user(
                     organisation_id=org_user.organisation.id,
                     organisation_name=org_user.organisation.name,
                     role=org_user.role,
-                    joined_at=org_user.created_at,
+                    joined_at=None,  # OrganisationUser doesn't have timestamps
                 )
             )
 
@@ -254,7 +238,7 @@ def update_user(
                     organisation_id=org_user.organisation.id,
                     organisation_name=org_user.organisation.name,
                     role=org_user.role,
-                    joined_at=org_user.created_at,
+                    joined_at=None,  # OrganisationUser doesn't have timestamps
                 )
             )
 

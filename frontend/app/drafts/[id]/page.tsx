@@ -9,8 +9,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { draftSessionsAPI } from '@/lib/api/services';
-import type { DraftSession, Citation, IntakeQuestion } from '@/types/api';
+import { draftSessionsAPI, authAPI } from '@/lib/api/services';
+import type { DraftSession, Citation, IntakeQuestion, User } from '@/types/api';
 import LegalDocumentEditor from '@/components/editor/LegalDocumentEditor';
 import { ChatBox, ChatMessage } from '@/components/chat/ChatBox';
 import { marked } from 'marked';
@@ -90,9 +90,18 @@ export default function DraftDetailPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [sendingChat, setSendingChat] = useState(false);
 
+  // Template customization state (admin-only)
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState('');
+
   // Use ref to track if we've initialized responses to prevent clearing on poll
   const responsesInitialized = useRef(false);
   const editModeInitialized = useRef(false);
+
+  // Track scroll position to prevent unwanted scrolling
+  const editorScrollRef = useRef<HTMLDivElement>(null);
+  const lastScrollPosition = useRef(0);
 
   const loadDraftData = useCallback(async () => {
     try {
@@ -143,6 +152,25 @@ export default function DraftDetailPage() {
     const interval = setInterval(loadDraftData, 5000); // Poll every 5 seconds
     return () => clearInterval(interval);
   }, [loadDraftData]);
+
+  // Load current user to check if admin
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const user = await authAPI.getCurrentUser();
+        setCurrentUser(user);
+
+        // Load custom prompt from localStorage
+        const saved = localStorage.getItem('draft_chat_prompt');
+        if (saved) {
+          setCustomPrompt(saved);
+        }
+      } catch (error) {
+        console.error('Failed to load user:', error);
+      }
+    };
+    loadUser();
+  }, []);
 
   const handleSubmitIntake = async () => {
     if (!draft) {
@@ -203,34 +231,109 @@ export default function DraftDetailPage() {
       const updated = await draftSessionsAPI.updateContent(draftId, plainContent);
       setDraft(updated);
       setIsEditing(false);
-      alert('✓ Draft saved successfully!');
+
+      // Navigate back to case with success message
+      router.push(`/cases/${updated.case_id}?success=true&message=${encodeURIComponent('✓ Draft saved successfully!')}`);
     } catch (err: any) {
       console.error('Failed to save edit:', err);
       alert(`Failed to save: ${err?.message || 'Unknown error'}`);
-    } finally {
       setSavingEdit(false);
     }
   };
 
   const handleCancelEdit = () => {
-    setIsEditing(false);
-    setEditedContent(plainTextToHtml(draft?.draft_doc?.content || ''));
+    // Navigate back to case without saving
+    if (!draft) return;
+    router.push(`/cases/${draft.case_id}`);
+  };
+
+  const handleExport = async (format: 'pdf' | 'docx' | 'markdown') => {
+    try {
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        alert('Please log in to export documents');
+        return;
+      }
+
+      if (!draft) {
+        alert('Draft not loaded');
+        return;
+      }
+
+      const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const endpoint = format === 'markdown' ? 'markdown' : format === 'docx' ? 'docx' : 'pdf';
+      const url = `${baseURL}/api/v1/draft-sessions/${draftId}/export/${endpoint}?citation_format=endnotes`;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Export failed: ${response.statusText}`);
+      }
+
+      // Get filename from Content-Disposition header or use default
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `${draft.title}.${format === 'docx' ? 'docx' : format === 'markdown' ? 'md' : 'pdf'}`;
+
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+
+      // Download file
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+
+    } catch (error: any) {
+      console.error('Export failed:', error);
+      alert(`Export failed: ${error.message}`);
+    }
+  };
+
+  const handleSaveTemplate = () => {
+    localStorage.setItem('draft_chat_prompt', customPrompt);
+    setShowTemplateModal(false);
+    alert('Prompt template saved! It will be used in future draft conversations.');
+  };
+
+  const handleResetTemplate = () => {
+    localStorage.removeItem('draft_chat_prompt');
+    setCustomPrompt('');
+    alert('Prompt template reset to default.');
   };
 
   const handleSendChat = async (message: string) => {
     setSendingChat(true);
 
-    // Add user message immediately
-    const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      content: message,
-      timestamp: new Date(),
-    };
-    setChatMessages(prev => [...prev, userMessage]);
+    // Check if this is the first message (no existing messages)
+    const isFirstMessage = chatMessages.length === 0;
+
+    // Add user message immediately (unless it's the first message which is auto-triggered)
+    if (message) {
+      const userMessage: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: message,
+        timestamp: new Date(),
+      };
+      setChatMessages(prev => [...prev, userMessage]);
+    }
 
     try {
-      const response = await draftSessionsAPI.chat(draftId, message);
+      const response = await draftSessionsAPI.chat(draftId, message || '', isFirstMessage);
 
       // Add AI response to history with tool information
       const assistantMessage: ChatMessage = {
@@ -243,13 +346,15 @@ export default function DraftDetailPage() {
       };
       setChatMessages(prev => [...prev, assistantMessage]);
 
-      // Refresh draft to get updated content
-      const updated = await draftSessionsAPI.get(draftId);
-      setDraft(updated);
+      // Refresh draft to get updated content (if document was modified)
+      if (response.document_modified) {
+        const updated = await draftSessionsAPI.get(draftId);
+        setDraft(updated);
 
-      // If in edit mode, update edited content (convert to HTML)
-      if (isEditing) {
-        setEditedContent(plainTextToHtml(updated.draft_doc?.content || ''));
+        // If in edit mode, update edited content (convert to HTML)
+        if (isEditing) {
+          setEditedContent(plainTextToHtml(updated.draft_doc?.content || ''));
+        }
       }
     } catch (err: any) {
       console.error('Failed to send chat:', err);
@@ -266,9 +371,23 @@ export default function DraftDetailPage() {
     }
   };
 
+  // Auto-trigger welcome message on first load when in review mode (disabled to prevent scrolling)
+  // Users can manually start chatting when ready
+  // useEffect(() => {
+  //   if (draft?.status === 'review' && chatMessages.length === 0 && !sendingChat) {
+  //     // Trigger welcome message
+  //     handleSendChat('');
+  //   }
+  // }, [draft?.status]);
+
   // Initialize edited content and auto-enable edit mode for ready/review drafts
   useEffect(() => {
     if (draft?.draft_doc?.content) {
+      // Save current scroll position
+      if (editorScrollRef.current) {
+        lastScrollPosition.current = editorScrollRef.current.scrollTop;
+      }
+
       // Convert plain text to HTML for the editor
       const htmlContent = plainTextToHtml(draft.draft_doc.content);
 
@@ -284,6 +403,13 @@ export default function DraftDetailPage() {
         setEditedContent(htmlContent); // Set content when first entering edit mode
         editModeInitialized.current = true;
       }
+
+      // Restore scroll position after content update
+      setTimeout(() => {
+        if (editorScrollRef.current && lastScrollPosition.current > 0) {
+          editorScrollRef.current.scrollTop = lastScrollPosition.current;
+        }
+      }, 0);
     }
   }, [draft?.draft_doc?.content, draft?.status, isEditing]);
 
@@ -299,6 +425,9 @@ export default function DraftDetailPage() {
     };
     return colors[status] || 'bg-muted text-card-foreground border border-border';
   };
+
+  // Check if user is admin
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'system_admin';
 
   if (loading) {
     return (
@@ -322,7 +451,7 @@ export default function DraftDetailPage() {
 
   return (
     <AppLayout>
-      <div className="h-[calc(100vh-88px)] flex flex-col overflow-hidden -m-6 p-6">
+      <div className="h-full flex flex-col overflow-hidden">
         {/* Error Message (if any) */}
         {draft.error_message && (
           <div className="rounded-md bg-destructive/10 p-4 border border-destructive/20 flex-shrink-0 mb-3">
@@ -475,7 +604,6 @@ export default function DraftDetailPage() {
         {/* Research Status */}
         {draft.status === 'research' && (
           <div className="bg-card shadow rounded-lg p-6 border border-border flex-shrink-0">
-            {console.log('Research section rendering:', { status: draft.status, has_summary: !!draft.research_summary })}
             {draft.research_summary ? (
               <>
                 <h2 className="text-lg font-medium text-foreground mb-4">
@@ -625,6 +753,30 @@ export default function DraftDetailPage() {
                           {draft.title} - {draft.document_type}
                         </h2>
                         <div className="flex items-center gap-3">
+                          {/* Export Buttons */}
+                          <div className="flex items-center gap-2 mr-2">
+                            <button
+                              onClick={() => handleExport('pdf')}
+                              className="inline-flex items-center px-3 py-2 border border-border text-xs font-medium rounded-md text-foreground bg-background hover:bg-muted transition-all"
+                              title="Export to PDF"
+                            >
+                              📄 PDF
+                            </button>
+                            <button
+                              onClick={() => handleExport('docx')}
+                              className="inline-flex items-center px-3 py-2 border border-border text-xs font-medium rounded-md text-foreground bg-background hover:bg-muted transition-all"
+                              title="Export to Word"
+                            >
+                              📝 Word
+                            </button>
+                            <button
+                              onClick={() => handleExport('markdown')}
+                              className="inline-flex items-center px-3 py-2 border border-border text-xs font-medium rounded-md text-foreground bg-background hover:bg-muted transition-all"
+                              title="Export to Markdown"
+                            >
+                              📋 MD
+                            </button>
+                          </div>
                           <button
                             onClick={handleCancelEdit}
                             disabled={savingEdit}
@@ -642,7 +794,7 @@ export default function DraftDetailPage() {
                         </div>
                       </div>
                       {/* Editor Content */}
-                      <div className="flex-1 overflow-y-auto p-6">
+                      <div ref={editorScrollRef} className="flex-1 overflow-y-auto p-6">
                         <LegalDocumentEditor
                           content={editedContent}
                           onChange={setEditedContent}
@@ -669,17 +821,40 @@ export default function DraftDetailPage() {
 
                 {/* Chat Interface on Right (Review Mode Only) */}
                 {draft.status === 'review' && (
-                  <div className="h-full min-h-0 flex flex-col">
-                    <ChatBox
-                      messages={chatMessages}
-                      onSendMessage={handleSendChat}
-                      isLoading={sendingChat}
-                      placeholder="e.g., Make the introduction more concise..."
-                      welcomeMessage="Hi! I'm your draft assistant. I can help you improve your draft with specific requests like:\n\n• Make sections shorter or more detailed\n• Strengthen legal arguments\n• Improve clarity and readability\n• Adjust tone and style\n\nWhat would you like me to help with?"
-                      enableMarkdown={false}
-                      showTimestamps={false}
-                      maxHeight="100%"
-                    />
+                  <div className="h-full min-h-0 flex flex-col bg-card border border-border rounded-lg shadow overflow-hidden">
+                    {/* Chat Header with Template Icon */}
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50">
+                      <div className="flex items-center gap-2">
+                        <svg className="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                        </svg>
+                        <h3 className="text-sm font-semibold text-foreground">Draft Assistant</h3>
+                      </div>
+                      {isAdmin && (
+                        <button
+                          onClick={() => setShowTemplateModal(true)}
+                          className="text-muted-foreground hover:text-primary transition-colors"
+                          title="Edit Prompt Template (Admin)"
+                        >
+                          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 010 2H6v2a1 1 0 01-2 0V5zM4 13a1 1 0 011-1h2a1 1 0 010 2H5a1 1 0 01-1-1zm6-8a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1zm6 0a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1zM9 13a1 1 0 011-1h6a1 1 0 110 2h-6a1 1 0 01-1-1zm10-5a1 1 0 011 1v2a1 1 0 11-2 0V9a1 1 0 011-1zm-4 8a1 1 0 011 1v2a1 1 0 11-2 0v-2a1 1 0 011-1zm4 0a1 1 0 011 1v2a1 1 0 11-2 0v-2a1 1 0 011-1z" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                    {/* Chat Content */}
+                    <div className="flex-1 min-h-0">
+                      <ChatBox
+                        messages={chatMessages}
+                        onSendMessage={handleSendChat}
+                        isLoading={sendingChat}
+                        placeholder="e.g., Make the introduction more concise..."
+                        welcomeMessage="Hi! I'm your draft assistant. I can help you improve your draft with specific requests like:\n\n• Make sections shorter or more detailed\n• Strengthen legal arguments\n• Improve clarity and readability\n• Adjust tone and style\n\nWhat would you like me to help with?"
+                        enableMarkdown={true}
+                        showTimestamps={false}
+                        maxHeight="100%"
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -728,6 +903,59 @@ export default function DraftDetailPage() {
           </>
         )}
       </div>
+
+      {/* Template Editor Modal */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h2 className="text-lg font-semibold text-foreground">Edit Draft Assistant Prompt Template</h2>
+              <button
+                onClick={() => setShowTemplateModal(false)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              <p className="text-sm text-muted-foreground mb-4">
+                Customize the system prompt for the Draft Assistant. This prompt guides how the AI helps improve drafts.
+                Leave empty to use the default prompt. Use variables: {'{draft_id}'}, {'{draft_title}'}, {'{document_type}'}.
+              </p>
+              <textarea
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                className="w-full h-64 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none font-mono"
+                placeholder="Enter custom system prompt here...&#10;&#10;Example:&#10;You are a skilled legal editor for South African litigation.&#10;&#10;Context: Draft {draft_id} - {draft_title} ({document_type})&#10;&#10;Your role is to help practitioners refine their drafts with precision and clarity while maintaining proper legal formatting."
+              />
+            </div>
+            <div className="flex items-center justify-between p-4 border-t border-border bg-muted/30">
+              <button
+                onClick={handleResetTemplate}
+                className="px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+              >
+                Reset to Default
+              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowTemplateModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground border border-border rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveTemplate}
+                  className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md transition-colors"
+                >
+                  Save Template
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }

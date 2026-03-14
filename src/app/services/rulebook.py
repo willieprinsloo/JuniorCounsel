@@ -507,8 +507,9 @@ class RulebookService:
         if not rulebook:
             raise ValueError(f"Rulebook {rulebook_id} not found")
 
-        if not rulebook.rules_json:
-            raise ValueError(f"Rulebook {rulebook_id} has no rules_json")
+        if not rulebook.rules_json or not isinstance(rulebook.rules_json, dict):
+            logger.error(f"Rulebook {rulebook_id} rules_json is invalid: {type(rulebook.rules_json)} = {rulebook.rules_json}")
+            raise ValueError(f"Rulebook {rulebook_id} has no valid rules_json")
 
         query_templates = rulebook.rules_json.get('research_query_templates', [])
         queries = []
