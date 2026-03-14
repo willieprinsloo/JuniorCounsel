@@ -24,8 +24,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-600">Loading...</div>
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <div className="text-muted-foreground">Loading...</div>
       </div>
     );
   }
@@ -35,12 +35,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-background transition-colors">
       <Header />
       <div className="flex">
         <Sidebar />
         <main className="flex-1 p-6">
-          {children}
+          <div className="mx-auto" style={{ maxWidth: '1700px' }}>
+            {children}
+          </div>
         </main>
       </div>
     </div>
